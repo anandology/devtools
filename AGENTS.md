@@ -2,6 +2,8 @@
 
 This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
 
+Each issue will clearly defined scope, notes for implementation and acceptance criteria.
+
 ## Quick Reference
 
 ```bash
