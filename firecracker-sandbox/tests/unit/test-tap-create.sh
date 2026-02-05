@@ -55,11 +55,19 @@ fi
 
 echo ""
 echo "Verifying TAP device is up..."
-TAP_STATE=$(ip link show "$TAP_NAME" | grep -o 'state [A-Z]*' | awk '{print $2}')
+TAP_INFO=$(ip link show "$TAP_NAME")
+TAP_STATE=$(echo "$TAP_INFO" | grep -o 'state [A-Z]*' | awk '{print $2}')
+TAP_FLAGS=$(echo "$TAP_INFO" | grep -oP '<[^>]+>')
+
+# TAP device is considered up if:
+# 1. State is UP or UNKNOWN (has carrier)
+# 2. State is DOWN but has UP flag (no carrier, which is expected for disconnected TAP)
 if [[ "$TAP_STATE" == "UP" ]] || [[ "$TAP_STATE" == "UNKNOWN" ]]; then
     _print_result "PASS" "TAP device is in UP/UNKNOWN state"
+elif [[ "$TAP_STATE" == "DOWN" ]] && [[ "$TAP_FLAGS" == *"UP"* ]]; then
+    _print_result "PASS" "TAP device has UP flag (state DOWN due to no carrier, which is normal)"
 else
-    _print_result "FAIL" "TAP device is in $TAP_STATE state"
+    _print_result "FAIL" "TAP device is in $TAP_STATE state without UP flag"
 fi
 
 echo ""

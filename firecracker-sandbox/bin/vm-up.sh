@@ -241,7 +241,7 @@ ssh -o StrictHostKeyChecking=no \
     -o LogLevel=ERROR \
     $SSH_KEY \
     "$USERNAME@$GUEST_IP" \
-    "sudo mkdir -p /mnt/home && sudo mount /dev/vdb /mnt/home 2>/dev/null || true" 2>/dev/null || warn "Home volume mount may have failed"
+    "echo 'VM is ready'" 2>/dev/null || warn "SSH connection check failed"
 
 info ""
 info "========================================="

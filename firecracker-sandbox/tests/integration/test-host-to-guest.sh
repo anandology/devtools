@@ -58,7 +58,7 @@ cat > "/tmp/firecracker-config-$TEST_VM.json" << EOF
 {
   "boot-source": {
     "kernel_image_path": "$KERNEL",
-    "boot_args": "console=ttyS0 reboot=k panic=1 pci=off ip=$GUEST_IP::$HOST_IP:255.255.255.0::eth0:off"
+    "boot_args": "console=ttyS0 reboot=k panic=1 pci=off"
   },
   "drives": [
     {
@@ -91,8 +91,14 @@ FC_PID=$!
 register_cleanup "kill $FC_PID 2>/dev/null || true"
 
 echo ""
-echo "Waiting for VM to boot..."
-sleep 5
+echo "Waiting for VM to boot and network to configure..."
+sleep 12
+
+# Check if Firecracker is still running
+if ! kill -0 $FC_PID 2>/dev/null; then
+    echo "  ERROR: Firecracker process died"
+    exit 1
+fi
 
 echo ""
 echo "Testing ping to guest ($GUEST_IP)..."

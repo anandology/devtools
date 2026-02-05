@@ -217,12 +217,11 @@ info "Configuring fstab..."
 cat > "$ROOTFS_TEMP/etc/fstab" << EOF
 # <device>  <mount>  <type>  <options>  <dump>  <pass>
 /dev/vda    /        ext4    defaults   0       1
-/dev/vdb    /data    ext4    defaults,nofail   0       2
+/dev/vdb    /home    ext4    defaults,nofail   0       2
 EOF
 
-# Create data mount point with correct ownership
-mkdir -p "$ROOTFS_TEMP/data"
-chown -R 1000:1000 "$ROOTFS_TEMP/data"
+# Create home mount point
+mkdir -p "$ROOTFS_TEMP/home"
 
 # Configure networking with systemd-networkd
 info "Configuring networking..."
@@ -255,28 +254,24 @@ EOF
 # Enable SSH service
 chroot "$ROOTFS_TEMP" systemctl enable ssh
 
-# Create user account
-info "Creating user account '$USERNAME'..."
-chroot "$ROOTFS_TEMP" useradd -m -s /bin/bash -G sudo "$USERNAME"
+# Create user account WITHOUT home directory on rootfs
+# Home will be on separate volume (/dev/vdb mounted at /home)
+info "Creating user account '$USERNAME' (home will be on separate volume)..."
+chroot "$ROOTFS_TEMP" useradd -M -s /bin/bash -G sudo "$USERNAME"
 # Allow sudo without password for convenience
 echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > "$ROOTFS_TEMP/etc/sudoers.d/$USERNAME"
 chmod 0440 "$ROOTFS_TEMP/etc/sudoers.d/$USERNAME"
 
-# Set up SSH keys
-info "Setting up SSH keys..."
-USER_SSH_DIR="$ROOTFS_TEMP/home/$USERNAME/.ssh"
+# Set up SSH keys for root only (user keys will be on home volume)
+info "Setting up SSH keys for root..."
 ROOT_SSH_DIR="$ROOTFS_TEMP/root/.ssh"
-mkdir -p "$USER_SSH_DIR" "$ROOT_SSH_DIR"
+mkdir -p "$ROOT_SSH_DIR"
 
 # Copy SSH key
 cp "$SSH_KEY_PATH" "$VM_DIR/ssh_key.pub"
-cat "$SSH_KEY_PATH" > "$USER_SSH_DIR/authorized_keys"
 cat "$SSH_KEY_PATH" > "$ROOT_SSH_DIR/authorized_keys"
 
 # Set permissions
-chown -R 1000:1000 "$USER_SSH_DIR"  # UID 1000 is typically the first user
-chmod 700 "$USER_SSH_DIR"
-chmod 600 "$USER_SSH_DIR/authorized_keys"
 chmod 700 "$ROOT_SSH_DIR"
 chmod 600 "$ROOT_SSH_DIR/authorized_keys"
 
@@ -300,16 +295,8 @@ EOF
     chmod 755 "$ROOTFS_TEMP/first-boot.sh"
 fi
 
-# Copy package files to VM
-info "Copying package configuration files..."
-mkdir -p "$ROOTFS_TEMP/home/$USERNAME"
-if [[ -f "$VM_DIR/apt-packages.txt" ]]; then
-    cp "$VM_DIR/apt-packages.txt" "$ROOTFS_TEMP/home/$USERNAME/apt-packages.txt"
-fi
-if [[ -f "$VM_DIR/packages.nix" ]]; then
-    cp "$VM_DIR/packages.nix" "$ROOTFS_TEMP/home/$USERNAME/packages.nix"
-fi
-chown -R 1000:1000 "$ROOTFS_TEMP/home/$USERNAME"
+# Note: Package files will be copied to home volume later
+# since user home is on /dev/vdb, not on rootfs
 
 # Create ext4 filesystem image
 info "Creating rootfs image..."
@@ -336,7 +323,40 @@ HOME_SIZE_MB=$(numfmt --from=iec "$HOME_SIZE" | awk '{print int($1/1024/1024)}')
 dd if=/dev/zero of="$VM_DIR/home.ext4" bs=1M count=$HOME_SIZE_MB status=progress
 mkfs.ext4 -F "$VM_DIR/home.ext4"
 
-info "✓ Home volume created"
+# Mount home volume and set up user home directory
+info "Setting up user home directory on home volume..."
+HOME_MOUNT=$(mktemp -d)
+mount "$VM_DIR/home.ext4" "$HOME_MOUNT"
+
+# Create user home directory
+mkdir -p "$HOME_MOUNT/$USERNAME"
+chown 1000:1000 "$HOME_MOUNT/$USERNAME"
+chmod 755 "$HOME_MOUNT/$USERNAME"
+
+# Set up SSH keys for user
+USER_SSH_DIR="$HOME_MOUNT/$USERNAME/.ssh"
+mkdir -p "$USER_SSH_DIR"
+cat "$SSH_KEY_PATH" > "$USER_SSH_DIR/authorized_keys"
+chown -R 1000:1000 "$USER_SSH_DIR"
+chmod 700 "$USER_SSH_DIR"
+chmod 600 "$USER_SSH_DIR/authorized_keys"
+
+# Copy package files to user home
+if [[ -f "$VM_DIR/apt-packages.txt" ]]; then
+    cp "$VM_DIR/apt-packages.txt" "$HOME_MOUNT/$USERNAME/apt-packages.txt"
+    chown 1000:1000 "$HOME_MOUNT/$USERNAME/apt-packages.txt"
+fi
+if [[ -f "$VM_DIR/packages.nix" ]]; then
+    cp "$VM_DIR/packages.nix" "$HOME_MOUNT/$USERNAME/packages.nix"
+    chown 1000:1000 "$HOME_MOUNT/$USERNAME/packages.nix"
+fi
+
+# Unmount home volume
+sync
+umount "$HOME_MOUNT"
+rm -rf "$HOME_MOUNT"
+
+info "✓ Home volume created and user home configured"
 
 # Create TAP device
 TAP_NAME="tap-$VM_NAME"

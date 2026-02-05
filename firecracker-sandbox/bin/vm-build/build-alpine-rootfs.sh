@@ -151,13 +151,32 @@ rc-update add modules boot || true
 rc-update add sysctl boot || true
 rc-update add hostname boot
 rc-update add bootmisc boot
+rc-update add localmount boot || true
 
 rc-update add mount-ro shutdown || true
 rc-update add killprocs shutdown || true
 rc-update add savecache shutdown || true
 
-rc-update add networking default
+# Enable networking in boot runlevel for early network configuration
+rc-update add networking boot
 rc-update add sshd default
+rc-update add local default
+
+# Create a local.d script to verify network is working
+mkdir -p /etc/local.d
+cat > /etc/local.d/network-check.start << 'LOCALEOF'
+#!/bin/sh
+# Verify network interface has an IP address
+for i in 1 2 3 4 5; do
+    if ip addr show eth0 | grep -q "inet "; then
+        echo "Network configured successfully"
+        exit 0
+    fi
+    sleep 1
+done
+echo "Warning: Network may not be configured properly"
+LOCALEOF
+chmod +x /etc/local.d/network-check.start
 
 # Configure SSH
 sed -i 's/#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config

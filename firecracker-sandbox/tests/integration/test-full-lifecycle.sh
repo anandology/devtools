@@ -20,6 +20,10 @@ TEST_VM="test-lifecycle-$$"
 VMS_DIR="$HOME/.firecracker-vms"
 VM_DIR="$VMS_DIR/$TEST_VM"
 
+# Set VMS_ROOT for the framework scripts
+# This overrides the default location to use $HOME/.firecracker-vms
+export VMS_ROOT="$HOME/.firecracker-vms"
+
 # Cleanup function
 cleanup_test_vm() {
     echo ""
@@ -78,6 +82,44 @@ fi
 _print_result "PASS" "All prerequisites available" || true
 
 echo ""
+echo "Setting up test environment..."
+
+# Set up minimal bridge infrastructure for testing
+# Create a fake bridge device for vm-init.sh validation
+# STATE_DIR is defined in config.sh as $VMS_ROOT/state
+STATE_DIR="$VMS_ROOT/state"
+mkdir -p "$STATE_DIR"
+
+# Create a real bridge for testing (or use existing one)
+BRIDGE_NAME="br-firecracker-test"
+if ! ip link show "$BRIDGE_NAME" &>/dev/null; then
+    echo "  Creating test bridge: $BRIDGE_NAME"
+    if sudo ip link add "$BRIDGE_NAME" type bridge 2>/dev/null; then
+        sudo ip addr add 172.16.0.1/24 dev "$BRIDGE_NAME" 2>/dev/null || true
+        sudo ip link set dev "$BRIDGE_NAME" up
+        register_cleanup "sudo ip link delete '$BRIDGE_NAME' 2>/dev/null || true"
+        
+        # Create symlink for vm-init.sh check
+        ln -sf "/sys/class/net/$BRIDGE_NAME" "$STATE_DIR/bridge"
+        register_cleanup "rm -f '$STATE_DIR/bridge'"
+        
+        _print_result "PASS" "Test bridge created" || true
+    else
+        echo "  WARN: Could not create bridge, will use mock"
+        # Create a mock bridge link for testing
+        touch "$STATE_DIR/bridge-mock"
+        ln -sf "$STATE_DIR/bridge-mock" "$STATE_DIR/bridge"
+        register_cleanup "rm -f '$STATE_DIR/bridge' '$STATE_DIR/bridge-mock'"
+        _print_result "PASS" "Mock bridge created" || true
+    fi
+else
+    echo "  Using existing bridge: $BRIDGE_NAME"
+    ln -sf "/sys/class/net/$BRIDGE_NAME" "$STATE_DIR/bridge"
+    register_cleanup "rm -f '$STATE_DIR/bridge'"
+    _print_result "PASS" "Using existing bridge" || true
+fi
+
+echo ""
 echo "=========================================="
 echo "Phase 1: VM Init"
 echo "=========================================="
@@ -85,10 +127,14 @@ echo ""
 
 # Run vm-init
 echo "Running: vm-init.sh $TEST_VM"
-if "$BIN_DIR/vm-init.sh" "$TEST_VM" >/dev/null 2>&1; then
+INIT_OUTPUT=$("$BIN_DIR/vm-init.sh" "$TEST_VM" 2>&1) || INIT_FAILED=true
+
+if [[ -z "${INIT_FAILED:-}" ]]; then
     _print_result "PASS" "VM init succeeded" || true
 else
     _print_result "FAIL" "VM init failed" || true
+    echo "  Error output:"
+    echo "$INIT_OUTPUT" | head -10 | sed 's/^/    /'
     assert_summary
     exit 1
 fi

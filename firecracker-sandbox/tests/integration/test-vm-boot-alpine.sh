@@ -17,7 +17,14 @@ echo ""
 TEST_VM="test-alpine-boot-$$"
 SOCKET_PATH="/tmp/firecracker-$TEST_VM.socket"
 ROOTFS="$PROJECT_ROOT/tests/images/alpine-test.ext4"
-KERNEL="$PROJECT_ROOT/tests/images/vmlinux"
+# Try multiple kernel locations
+if [[ -f "/root/.firecracker-vms/.images/vmlinux" ]]; then
+    KERNEL="/root/.firecracker-vms/.images/vmlinux"
+elif [[ -f "$HOME/.firecracker-vms/.images/vmlinux" ]]; then
+    KERNEL="$HOME/.firecracker-vms/.images/vmlinux"
+else
+    KERNEL="$PROJECT_ROOT/tests/images/vmlinux"
+fi
 
 # Register cleanup
 register_cleanup "rm -f '$SOCKET_PATH'"
@@ -70,18 +77,30 @@ register_cleanup "rm -f '/tmp/firecracker-config-$TEST_VM.json'"
 
 echo ""
 echo "Starting firecracker..."
-firecracker --api-sock "$SOCKET_PATH" --config-file "/tmp/firecracker-config-$TEST_VM.json" >/dev/null 2>&1 &
+CONSOLE_LOG="/tmp/console-$TEST_VM.log"
+register_cleanup "rm -f '$CONSOLE_LOG'"
+
+# Start firecracker with timeout and capture output
+# Firecracker with --config-file runs in foreground, so we use timeout
+timeout 10 firecracker \
+    --api-sock "$SOCKET_PATH" \
+    --config-file "/tmp/firecracker-config-$TEST_VM.json" \
+    > "$CONSOLE_LOG" 2>&1 &
+
 FC_PID=$!
 register_cleanup "kill $FC_PID 2>/dev/null || true"
 
 echo ""
-echo "Checking firecracker process..."
-sleep 2
+echo "Waiting for VM to boot..."
+sleep 3
 
-if ps -p $FC_PID >/dev/null 2>&1; then
-    _print_result "PASS" "Firecracker process running" || true
+# Check if VM booted successfully by looking for success message in console output
+if grep -q "Successfully started microvm" "$CONSOLE_LOG" 2>/dev/null; then
+    _print_result "PASS" "Firecracker successfully started microVM" || true
 else
-    _print_result "FAIL" "Firecracker process exited" || true
+    _print_result "FAIL" "Firecracker did not start microVM successfully" || true
+    echo "  Console output:"
+    cat "$CONSOLE_LOG" | head -20
 fi
 
 echo ""
