@@ -20,8 +20,10 @@ if [[ ! -d "bin" ]]; then
     exit 1
 fi
 
-# Create VERSION file
-echo "1.0.0" > VERSION
+if [[ ! -f "VERSION" ]]; then
+    echo "Error: VERSION file not found"
+    exit 1
+fi
 
 # Create dist directory if it doesn't exist
 mkdir -p "$SCRIPT_DIR/../dist"
@@ -48,9 +50,8 @@ zip -r vms.zip vms/ \
 # Move the package to dist/
 mv vms.zip "$SCRIPT_DIR/../dist/vms.zip"
 
-# Return to original directory and clean up
+# Return to original directory
 cd "$SCRIPT_DIR"
-rm -f VERSION
 
 echo ""
 echo "✓ Created dist/vms.zip"
