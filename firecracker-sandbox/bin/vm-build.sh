@@ -148,7 +148,7 @@ if [[ "$HAS_DEBOOTSTRAP" == false ]] && [[ "$HAS_DOCKER" == false ]]; then
 fi
 
 # Download kernel if not present
-KERNEL_PATH="$KERNELS_DIR/vmlinux-${KERNEL_VERSION}"
+KERNEL_PATH="$KERNELS_DIR/${KERNEL_VERSION}"
 if [[ ! -f "$KERNEL_PATH" ]]; then
     info "Downloading kernel ${KERNEL_VERSION}..."
     mkdir -p "$KERNELS_DIR"
