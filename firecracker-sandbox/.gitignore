@@ -5,3 +5,4 @@ release-*/
 tests/images/*.ext4
 tests/images/*.cpio
 tests/images/vmlinux
+vms/
