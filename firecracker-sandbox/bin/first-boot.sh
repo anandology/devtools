@@ -82,27 +82,24 @@ if [[ -f "$NIX_PACKAGES_FILE" ]]; then
         echo "Nix already installed"
     fi
     
-    # Install Nix packages
-    NIX_PACKAGES=$(cat "$NIX_PACKAGES_FILE" | grep -v '^#' | grep -v '^[[:space:]]*$' | tr '\n' ' ')
-    
-    if [[ -n "$NIX_PACKAGES" ]] && command -v nix &> /dev/null; then
+    # Install Nix packages from expression file
+    if command -v nix &> /dev/null; then
         echo ""
         echo "========================================="
         echo "Installing Nix packages..."
         echo "========================================="
-        echo "Packages: $NIX_PACKAGES"
+        echo "Using packages from: $NIX_PACKAGES_FILE"
         
-        for package in $NIX_PACKAGES; do
-            echo ""
-            echo "Installing: $package"
-            if su - "$USERNAME" -c "nix-env -iA nixpkgs.$package"; then
-                echo "  ✓ $package: OK"
-            else
-                echo "  ✗ $package: FAILED (continuing)"
-            fi
-        done
+        # Install packages from the Nix expression
+        # Note: -if (not -iA) because packages.nix returns a list, not an attribute set
+        if su - "$USERNAME" -c "nix-env -if '$NIX_PACKAGES_FILE'"; then
+            echo "  ✓ Nix packages installed successfully"
+        else
+            echo "  ✗ Nix package installation failed (continuing)"
+            echo "  Check $NIX_PACKAGES_FILE for syntax errors"
+        fi
     else
-        echo "No Nix packages to install or Nix not available"
+        echo "Nix not available, skipping package installation"
     fi
 else
     echo "No packages.nix file found, skipping Nix packages"

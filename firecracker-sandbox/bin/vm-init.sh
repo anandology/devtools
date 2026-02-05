@@ -155,10 +155,28 @@ EOF
 
 info "✓ Created apt-packages.txt"
 
-# Generate packages.nix
+# Generate packages.nix (proper Nix expression)
 cat > "$VM_DIR/packages.nix" << 'EOF'
-# Nix packages to install (space-separated)
-go_1_24 nodejs
+# Nix packages to install
+# This is a Nix expression that defines a list of packages to install
+# Edit this list to add or remove packages
+{ pkgs ? import <nixpkgs> {} }:
+
+with pkgs; [
+  # Development tools
+  go
+  nodejs
+  python3
+  
+  # CLI utilities
+  tmux
+  vim
+  git
+  curl
+  
+  # Add your packages here
+  # Find packages at: https://search.nixos.org/packages
+]
 EOF
 
 info "✓ Created packages.nix"
