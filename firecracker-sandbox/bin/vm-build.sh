@@ -148,11 +148,17 @@ if [[ "$HAS_DEBOOTSTRAP" == false ]] && [[ "$HAS_DOCKER" == false ]]; then
 fi
 
 # Download kernel if not present
-KERNEL_PATH="$KERNELS_DIR/${KERNEL_VERSION}"
+KERNEL_PATH="$KERNELS_DIR/vmlinux-${KERNEL_VERSION}"
 if [[ ! -f "$KERNEL_PATH" ]]; then
     info "Downloading kernel ${KERNEL_VERSION}..."
     mkdir -p "$KERNELS_DIR"
     curl -L "$KERNEL_URL" -o "$KERNEL_PATH"
+    
+    # Verify download (check if it's not an error message)
+    if [[ $(stat -c%s "$KERNEL_PATH" 2>/dev/null || stat -f%z "$KERNEL_PATH" 2>/dev/null) -lt 1000000 ]]; then
+        error "Kernel download failed. File is too small. Check URL: $KERNEL_URL"
+    fi
+    
     chmod +r "$KERNEL_PATH"
     chown "$SUDO_USER:$SUDO_USER" "$KERNEL_PATH"
     info "✓ Kernel downloaded"

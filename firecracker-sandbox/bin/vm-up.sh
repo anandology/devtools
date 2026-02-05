@@ -84,7 +84,7 @@ done
 info "Starting VM '$VM_NAME'..."
 
 # Find kernel
-KERNEL_PATH="$KERNELS_DIR/${KERNEL_VERSION}"
+KERNEL_PATH="$KERNELS_DIR/vmlinux-${KERNEL_VERSION}"
 if [[ ! -f "$KERNEL_PATH" ]]; then
     error "Kernel not found at $KERNEL_PATH"
 fi

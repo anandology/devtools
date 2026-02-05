@@ -17,9 +17,9 @@ detect_host_interface() {
 HOST_IFACE=$(detect_host_interface)
 
 # Kernel configuration
-# Using the quickstart guide kernel which is maintained and available
-KERNEL_VERSION="vmlinux.bin"
-KERNEL_URL="https://s3.amazonaws.com/spec.ccfc.min/img/quickstart_guide/x86_64/kernels/vmlinux.bin"
+# Using the latest 6.x kernel available for Firecracker v1.7
+KERNEL_VERSION="6.1.77"
+KERNEL_URL="https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.7/x86_64/vmlinux-${KERNEL_VERSION}"
 
 # Framework paths - determine ROOT based on script location
 # Scripts are in $ROOT/bin/, so ROOT is parent of bin directory
