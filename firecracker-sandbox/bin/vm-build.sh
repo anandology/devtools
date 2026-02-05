@@ -217,8 +217,12 @@ info "Configuring fstab..."
 cat > "$ROOTFS_TEMP/etc/fstab" << EOF
 # <device>  <mount>  <type>  <options>  <dump>  <pass>
 /dev/vda    /        ext4    defaults   0       1
-/dev/vdb    /home    ext4    defaults,nofail   0       2
+/dev/vdb    /data    ext4    defaults,nofail   0       2
 EOF
+
+# Create data mount point with correct ownership
+mkdir -p "$ROOTFS_TEMP/data"
+chown -R 1000:1000 "$ROOTFS_TEMP/data"
 
 # Configure networking with systemd-networkd
 info "Configuring networking..."
