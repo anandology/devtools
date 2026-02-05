@@ -146,17 +146,15 @@ apk add --no-cache \
 # Set up OpenRC (Alpine's init system)
 rc-update add devfs boot
 rc-update add dmesg boot
-rc-update add mdev boot
-rc-update add hwclock boot
-rc-update add modules boot
-rc-update add sysctl boot
+rc-update add hwclock boot || true
+rc-update add modules boot || true
+rc-update add sysctl boot || true
 rc-update add hostname boot
 rc-update add bootmisc boot
-rc-update add syslog boot
 
-rc-update add mount-ro shutdown
-rc-update add killprocs shutdown
-rc-update add savecache shutdown
+rc-update add mount-ro shutdown || true
+rc-update add killprocs shutdown || true
+rc-update add savecache shutdown || true
 
 rc-update add networking default
 rc-update add sshd default
