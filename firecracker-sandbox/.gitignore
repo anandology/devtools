@@ -1,0 +1,6 @@
+# Firecracker release artifacts
+release-*/
+
+# Test artifacts
+tests/images/*.ext4
+tests/images/*.cpio
