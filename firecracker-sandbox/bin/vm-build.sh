@@ -25,6 +25,51 @@ warn() {
     echo -e "${YELLOW}$1${NC}"
 }
 
+# Check if Docker is available
+check_docker() {
+    if command -v docker &> /dev/null; then
+        # Check if Docker daemon is running and accessible
+        if docker info &> /dev/null; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+# Check if host debootstrap supports target codename
+check_debootstrap_support() {
+    local codename="$1"
+    # Check if script exists in /usr/share/debootstrap/scripts/
+    if [[ -f "/usr/share/debootstrap/scripts/$codename" ]] || \
+       [[ -L "/usr/share/debootstrap/scripts/$codename" ]]; then
+        return 0
+    fi
+    return 1
+}
+
+# Run debootstrap via Docker
+run_debootstrap_docker() {
+    local codename="$1"
+    local target_dir="$2"
+    local ubuntu_version="$3"
+    
+    info "Using Docker to run debootstrap for Ubuntu $ubuntu_version ($codename)..."
+    info "This ensures compatibility regardless of host OS version."
+    
+    # Run debootstrap inside Docker container with target Ubuntu version
+    docker run --rm --privileged \
+        -v "$target_dir:/target" \
+        "ubuntu:$ubuntu_version" \
+        bash -c "apt-get update -qq && \
+                 apt-get install -y -qq debootstrap && \
+                 debootstrap --include=systemd,openssh-server,linux-image-virtual,init,sudo \
+                     $codename /target http://archive.ubuntu.com/ubuntu/"
+    
+    if [[ $? -ne 0 ]]; then
+        error "Docker debootstrap failed"
+    fi
+}
+
 # Check if running as root
 if [[ $EUID -ne 0 ]]; then
     error "This script must be run with sudo"
@@ -80,11 +125,27 @@ GUEST_IP=$(cat "$STATE_DIR_VM/ip.txt")
 info "Building VM '$VM_NAME' with IP $GUEST_IP..."
 
 # Check for required tools
-for cmd in debootstrap mkfs.ext4 mount umount chroot; do
+for cmd in mkfs.ext4 mount umount chroot; do
     if ! command -v $cmd &> /dev/null; then
-        error "$cmd is not installed. Install with: sudo apt install debootstrap"
+        error "$cmd is not installed. Install with: sudo apt install e2fsprogs util-linux"
     fi
 done
+
+# Check for debootstrap or Docker (at least one required)
+HAS_DEBOOTSTRAP=false
+HAS_DOCKER=false
+
+if command -v debootstrap &> /dev/null; then
+    HAS_DEBOOTSTRAP=true
+fi
+
+if check_docker; then
+    HAS_DOCKER=true
+fi
+
+if [[ "$HAS_DEBOOTSTRAP" == false ]] && [[ "$HAS_DOCKER" == false ]]; then
+    error "Either debootstrap or Docker is required. Install one of:\n  sudo apt install debootstrap\n  or install Docker"
+fi
 
 # Download kernel if not present
 KERNEL_PATH="$KERNELS_DIR/vmlinux-${KERNEL_VERSION}"
@@ -114,9 +175,21 @@ esac
 ROOTFS_TEMP=$(mktemp -d)
 trap "rm -rf $ROOTFS_TEMP" EXIT
 
-info "Running debootstrap for Ubuntu $UBUNTU_VERSION ($UBUNTU_CODENAME)..."
-debootstrap --include=systemd,openssh-server,linux-image-virtual,init,sudo \
-    "$UBUNTU_CODENAME" "$ROOTFS_TEMP" http://archive.ubuntu.com/ubuntu/
+# Decide whether to use host debootstrap or Docker
+USE_DOCKER=false
+
+if [[ "$HAS_DEBOOTSTRAP" == true ]] && check_debootstrap_support "$UBUNTU_CODENAME"; then
+    # Host debootstrap supports this version
+    info "Running debootstrap for Ubuntu $UBUNTU_VERSION ($UBUNTU_CODENAME)..."
+    debootstrap --include=systemd,openssh-server,linux-image-virtual,init,sudo \
+        "$UBUNTU_CODENAME" "$ROOTFS_TEMP" http://archive.ubuntu.com/ubuntu/
+elif [[ "$HAS_DOCKER" == true ]]; then
+    # Use Docker for debootstrap
+    USE_DOCKER=true
+    run_debootstrap_docker "$UBUNTU_CODENAME" "$ROOTFS_TEMP" "$UBUNTU_VERSION"
+else
+    error "Host debootstrap doesn't support Ubuntu $UBUNTU_VERSION ($UBUNTU_CODENAME) and Docker is not available.\n  Install Docker or use a supported Ubuntu version (22.04 or 20.04)."
+fi
 
 # Configure hostname
 info "Configuring hostname..."
