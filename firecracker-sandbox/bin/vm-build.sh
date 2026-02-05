@@ -212,6 +212,14 @@ ff02::1 ip6-allnodes
 ff02::2 ip6-allrouters
 EOF
 
+# Configure fstab for drive mounts
+info "Configuring fstab..."
+cat > "$ROOTFS_TEMP/etc/fstab" << EOF
+# <device>  <mount>  <type>  <options>  <dump>  <pass>
+/dev/vda    /        ext4    defaults   0       1
+/dev/vdb    /home    ext4    defaults,nofail   0       2
+EOF
+
 # Configure networking with systemd-networkd
 info "Configuring networking..."
 mkdir -p "$ROOTFS_TEMP/etc/systemd/network"

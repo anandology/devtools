@@ -97,7 +97,7 @@ cat > "$FC_CONFIG" << EOF
 {
   "boot-source": {
     "kernel_image_path": "$KERNEL_PATH",
-    "boot_args": "console=ttyS0 reboot=k panic=1 pci=off ip=$GUEST_IP::172.16.0.1:255.255.255.0::eth0:off"
+    "boot_args": "console=ttyS0 reboot=k panic=1 pci=off root=/dev/vda rw"
   },
   "drives": [
     {
