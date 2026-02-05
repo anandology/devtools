@@ -4,3 +4,4 @@ release-*/
 # Test artifacts
 tests/images/*.ext4
 tests/images/*.cpio
+tests/images/vmlinux
