@@ -89,8 +89,15 @@ info "✓ Assigned IP: $NEXT_IP"
 
 # Detect SSH key
 info "Detecting SSH key..."
+# Get actual user's home directory (not root's when using sudo)
+if [[ -n "$SUDO_USER" ]]; then
+    USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+else
+    USER_HOME="$HOME"
+fi
+
 SSH_KEY_PATH=""
-for key in "$HOME/.ssh/id_ed25519.pub" "$HOME/.ssh/id_rsa.pub" "$HOME/.ssh/id_ecdsa.pub"; do
+for key in "$USER_HOME/.ssh/id_ed25519.pub" "$USER_HOME/.ssh/id_rsa.pub" "$USER_HOME/.ssh/id_ecdsa.pub"; do
     if [[ -f "$key" ]]; then
         SSH_KEY_PATH="$key"
         info "✓ Found SSH key: $SSH_KEY_PATH"
@@ -106,8 +113,8 @@ else
     SSH_KEY_PATH="SSH_KEY_PATH=\"$SSH_KEY_PATH\""
 fi
 
-# Detect username
-USERNAME="$USER"
+# Detect username (use actual user, not root when using sudo)
+USERNAME="${SUDO_USER:-$USER}"
 
 # Generate config.sh
 info "Creating configuration file..."

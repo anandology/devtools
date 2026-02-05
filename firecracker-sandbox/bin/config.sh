@@ -20,8 +20,11 @@ HOST_IFACE=$(detect_host_interface)
 KERNEL_VERSION="6.1.102"
 KERNEL_URL="https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.7/${KERNEL_VERSION}/x86_64/vmlinux-${KERNEL_VERSION}"
 
-# Framework paths (relative to ~/vms/)
-VMS_ROOT="${VMS_ROOT:-$HOME/vms}"
+# Framework paths - determine ROOT based on script location
+# Scripts are in $ROOT/bin/, so ROOT is parent of bin directory
+# Use BASH_SOURCE to get config.sh location (works when sourced)
+CONFIG_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VMS_ROOT="${VMS_ROOT:-$(dirname "$CONFIG_SCRIPT_DIR")}"
 KERNELS_DIR="$VMS_ROOT/kernels"
 STATE_DIR="$VMS_ROOT/state"
 VMS_DIR="$VMS_ROOT/vms"
