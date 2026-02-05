@@ -4,7 +4,7 @@ set -e
 # Package distribution script - creates vms.zip for users
 
 # Store the script directory first
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 cd "$SCRIPT_DIR"
 
 echo "Creating vms.zip package..."
@@ -26,10 +26,10 @@ if [[ ! -f "VERSION" ]]; then
 fi
 
 # Create dist directory if it doesn't exist
-mkdir -p "$SCRIPT_DIR/../dist"
+mkdir -p "$SCRIPT_DIR/dist"
 
 # Clean up any existing package
-rm -f "$SCRIPT_DIR/../dist/vms.zip"
+rm -f "$SCRIPT_DIR/dist/vms.zip"
 
 # Create a temporary directory for staging
 TEMP_DIR=$(mktemp -d)
@@ -48,7 +48,7 @@ zip -r vms.zip vms/ \
     -x "*.swp" "*~" ".DS_Store" ".git/*" "__pycache__/*"
 
 # Move the package to dist/
-mv vms.zip "$SCRIPT_DIR/../dist/vms.zip"
+mv vms.zip "$SCRIPT_DIR/dist/vms.zip"
 
 # Return to original directory
 cd "$SCRIPT_DIR"
@@ -57,7 +57,7 @@ echo ""
 echo "✓ Created dist/vms.zip"
 echo ""
 echo "Package contents:"
-unzip -l ../dist/vms.zip | tail -n +4 | head -n -2
+unzip -l dist/vms.zip | tail -n +4 | head -n -2
 echo ""
 echo "Installation instructions:"
 echo "  1. Extract: unzip vms.zip (creates vms/ directory)"
