@@ -110,8 +110,11 @@ First boot installs packages (takes a few minutes). Subsequent boots are fast (~
 All commands run **without sudo**:
 
 ```bash
-# Start VM
+# Start VM (background mode)
 ~/vms/vm.sh up myvm
+
+# Start VM with console access (for troubleshooting)
+~/vms/vm.sh console myvm
 
 # SSH into VM
 ~/vms/vm.sh ssh myvm
@@ -216,7 +219,8 @@ sudo bin/cleanup.sh
 │   ├── cleanup.sh           # System cleanup
 │   ├── vm-init.sh           # Initialize VM
 │   ├── vm-build.sh          # Build VM
-│   ├── vm-up.sh             # Start VM
+│   ├── vm-up.sh             # Start VM (background)
+│   ├── vm-console.sh        # Start VM with console
 │   ├── vm-down.sh           # Stop VM
 │   ├── vm-ssh.sh            # SSH to VM
 │   ├── vm-status.sh         # VM status
@@ -299,11 +303,26 @@ Run setup again:
 sudo bin/setup.sh
 ```
 
-### VM won't start
+### VM won't start or login fails
 
-Check console log:
+Use console mode for interactive troubleshooting:
+```bash
+~/vms/vm.sh console myvm
+```
+
+This gives you direct console access to see boot messages and login directly.
+
+You can also check the console log:
 ```bash
 tail -f ~/vms/vms/myvm/state/console.log
+```
+
+Or mount the rootfs to inspect/fix files:
+```bash
+sudo mkdir -p /mnt/rootfs
+sudo mount ~/vms/vms/myvm/rootfs.ext4 /mnt/rootfs
+# Make changes...
+sudo umount /mnt/rootfs
 ```
 
 ### SSH connection refused

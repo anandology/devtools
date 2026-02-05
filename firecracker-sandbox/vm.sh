@@ -28,6 +28,7 @@ Commands:
   init <name>              Initialize a new VM configuration
   build <name>             Build VM images (requires sudo)
   up <name>                Start a VM
+  console <name>           Start a VM with console access
   down <name>              Stop a VM
   ssh <name> [args]        SSH into a running VM
   status <name>            Show VM status
@@ -77,6 +78,13 @@ case "$COMMAND" in
             error "VM name required. Usage: vm.sh up <name>"
         fi
         exec "$BIN_DIR/vm-up.sh" "$@"
+        ;;
+    
+    console)
+        if [[ $# -lt 1 ]]; then
+            error "VM name required. Usage: vm.sh console <name>"
+        fi
+        exec "$BIN_DIR/vm-console.sh" "$@"
         ;;
     
     down)

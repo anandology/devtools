@@ -1,0 +1,5 @@
+# Ignore all generated test images
+*.ext4
+*.cpio
+*.img
+*.qcow2
