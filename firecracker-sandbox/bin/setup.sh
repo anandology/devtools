@@ -80,6 +80,9 @@ fi
 # Create systemd service for bridge management
 info "Creating systemd service for bridge management..."
 
+# Make helper scripts executable
+chmod +x "$BIN_DIR/bridge-up.sh" "$BIN_DIR/bridge-down.sh"
+
 SERVICE_FILE="/etc/systemd/system/firecracker-bridge.service"
 
 cat > "$SERVICE_FILE" << EOF
@@ -90,37 +93,8 @@ After=network.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-
-ExecStart=/bin/bash -c '\
-    # Create bridge \
-    ip link add $BRIDGE_NAME type bridge 2>/dev/null || true; \
-    ip addr add $BRIDGE_IP dev $BRIDGE_NAME 2>/dev/null || true; \
-    ip link set $BRIDGE_NAME up; \
-    \
-    # Enable IP forwarding \
-    sysctl -w net.ipv4.ip_forward=1 > /dev/null; \
-    \
-    # Set up NAT rules \
-    HOST_IFACE=\$(ip route | grep default | awk "{print \\\$5}" | head -n1); \
-    iptables -t nat -C POSTROUTING -o "\$HOST_IFACE" -j MASQUERADE 2>/dev/null || \
-        iptables -t nat -A POSTROUTING -o "\$HOST_IFACE" -j MASQUERADE; \
-    iptables -C FORWARD -i $BRIDGE_NAME -o "\$HOST_IFACE" -j ACCEPT 2>/dev/null || \
-        iptables -A FORWARD -i $BRIDGE_NAME -o "\$HOST_IFACE" -j ACCEPT; \
-    iptables -C FORWARD -i "\$HOST_IFACE" -o $BRIDGE_NAME -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
-        iptables -A FORWARD -i "\$HOST_IFACE" -o $BRIDGE_NAME -m state --state RELATED,ESTABLISHED -j ACCEPT; \
-'
-
-ExecStop=/bin/bash -c '\
-    # Remove NAT rules \
-    HOST_IFACE=\$(ip route | grep default | awk "{print \\\$5}" | head -n1); \
-    iptables -t nat -D POSTROUTING -o "\$HOST_IFACE" -j MASQUERADE 2>/dev/null || true; \
-    iptables -D FORWARD -i $BRIDGE_NAME -o "\$HOST_IFACE" -j ACCEPT 2>/dev/null || true; \
-    iptables -D FORWARD -i "\$HOST_IFACE" -o $BRIDGE_NAME -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true; \
-    \
-    # Remove bridge \
-    ip link set $BRIDGE_NAME down 2>/dev/null || true; \
-    ip link delete $BRIDGE_NAME 2>/dev/null || true; \
-'
+ExecStart=$BIN_DIR/bridge-up.sh
+ExecStop=$BIN_DIR/bridge-down.sh
 
 [Install]
 WantedBy=multi-user.target
@@ -129,7 +103,9 @@ EOF
 # Reload systemd and enable service
 systemctl daemon-reload
 systemctl enable firecracker-bridge.service
-systemctl start firecracker-bridge.service
+
+# Use restart to ensure service uses new configuration (in case it was already running)
+systemctl restart firecracker-bridge.service
 
 info "✓ Bridge service created and started"
 
@@ -137,14 +113,24 @@ info "✓ Bridge service created and started"
 mkdir -p "$STATE_DIR"
 chown "$SUDO_USER:$SUDO_USER" "$STATE_DIR"
 
-# Create symlink to bridge interface
+# Wait for bridge to be created (with retry)
 BRIDGE_LINK="$STATE_DIR/bridge"
-if [[ -e "/sys/class/net/$BRIDGE_NAME" ]]; then
-    ln -sf "/sys/class/net/$BRIDGE_NAME" "$BRIDGE_LINK"
-    info "✓ Bridge $BRIDGE_NAME is active"
-else
-    error "Bridge $BRIDGE_NAME was not created successfully"
-fi
+MAX_RETRIES=10
+RETRY_COUNT=0
+
+while [[ $RETRY_COUNT -lt $MAX_RETRIES ]]; do
+    if [[ -e "/sys/class/net/$BRIDGE_NAME" ]]; then
+        ln -sf "/sys/class/net/$BRIDGE_NAME" "$BRIDGE_LINK"
+        info "✓ Bridge $BRIDGE_NAME is active"
+        break
+    fi
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+    if [[ $RETRY_COUNT -lt $MAX_RETRIES ]]; then
+        sleep 0.5
+    else
+        error "Bridge $BRIDGE_NAME was not created successfully after ${MAX_RETRIES} retries"
+    fi
+done
 
 # Create other required directories
 mkdir -p "$KERNELS_DIR" "$VMS_DIR"
