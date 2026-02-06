@@ -4,6 +4,24 @@ This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get sta
 
 Each issue will clearly defined scope, notes for implementation and acceptance criteria.
 
+## Memory (bead-memory)
+
+This project uses the **bead-memory** skill for persistent knowledge across sessions. You MUST use it.
+
+**At session start:** Run recall to load prior context:
+```bash
+skills/bead-memory/scripts/bead-recall.sh --limit 15
+```
+
+**When to create notes:** Use the bead-memory skill (see `.cursor/skills/bead-memory/SKILL.md`) to decide. In short: note surprising discoveries (til), decisions with reasoning (decision), procedures (howto), project context (context), and session summaries (worklog). Also create a note when the user says "remember this", "make a note", or similar.
+
+**Creating a note:** Always use the script, never raw `bd`:
+```bash
+skills/bead-memory/scripts/bead-memory.sh <category> "<title>" "<description>"
+```
+
+**Recalling:** `skills/bead-memory/scripts/bead-recall.sh` with optional `--tag`, `--search`, `--long`.
+
 ## Quick Reference
 
 ```bash
