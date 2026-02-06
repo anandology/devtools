@@ -1,15 +1,16 @@
 #!/bin/bash
-# Execute a script or interactive shell inside a chrooted rootfs/home image
+# Execute a command or interactive shell inside a chrooted rootfs/home image
 #
-# This script handles mounting/unmounting of rootfs and optional home images,
-# then either executes a script or drops into an interactive shell.
+# This script handles mounting/unmounting of rootfs and optional home images.
+# Use --extract to unpack a tgz at the root of the chroot, --copy to copy files
+# into the chroot, then run a command or start an interactive shell.
 #
 # Usage:
-#   chroot-image.sh --root rootfs.ext4 [--home home.ext4] [--script script.sh]
+#   chroot-image.sh --root rootfs.ext4 [--home home.ext4] [--extract tgz-path] [--copy src:dest ...] [--verbose] [command arg1 arg2 ...]
 #
-# If --script is provided, the script will be copied to /tmp/script.sh in the
-# chroot and executed. If --script is omitted, an interactive bash shell will
-# be started in the chroot.
+# If a command is given, it is run inside the chroot. If no arguments follow
+# the flags, an interactive bash shell is started (useful for copying files
+# and exploring).
 
 set -euo pipefail
 
@@ -25,7 +26,9 @@ error() {
 }
 
 info() {
-    echo -e "${GREEN}$1${NC}"
+    if [[ -n "${VERBOSE:-}" ]]; then
+        echo -e "${GREEN}$1${NC}"
+    fi
 }
 
 warn() {
@@ -34,35 +37,33 @@ warn() {
 
 usage() {
     cat << 'EOF'
-Usage: sudo ./chroot-image.sh --root <rootfs.ext4> [--home <home.ext4>] [--script <script.sh>]
+Usage: sudo ./chroot-image.sh --root <rootfs.ext4> [--home <home.ext4>] [--extract <tgz-path>] [--copy src:dest ...] [--verbose] [command arg1 arg2 ...]
 
-Execute a script or interactive shell inside a chrooted rootfs image.
+Execute a command or interactive shell inside a chrooted rootfs image.
 
 Arguments:
   --root PATH      Path to rootfs ext4 image (required)
   --home PATH      Path to home ext4 image (optional, will be mounted at /home)
-  --script PATH    Path to script to execute inside chroot (optional)
+  --extract PATH   Extract this .tgz/.tar.gz at the root of the chroot before running
+  --copy SRC:DEST  Copy file SRC from host to DEST inside chroot (may be repeated)
+  --verbose        Print progress messages
   -h, --help       Show this help message
 
-If --script is provided:
-  1. Script will be copied to /tmp/script.sh in the chroot
-  2. Made executable
-  3. Executed with bash
-  4. Exit status of the script will be returned
-
-If --script is omitted:
-  An interactive bash shell will be started in the chroot.
-  Type 'exit' to leave the shell and unmount the images.
+  Remaining arguments are the command to run inside the chroot (path + args).
+  If no command is given, an interactive bash shell is started.
 
 Examples:
-  # Execute script in rootfs only
-  sudo ./chroot-image.sh --root rootfs.ext4 --script configure.sh
+  # Extract Alpine rootfs tgz into empty image, then run a command
+  sudo ./chroot-image.sh --root empty.ext4 --extract alpine-minirootfs.tar.gz /bin/sh -c "echo hello"
 
-  # Execute script with home volume mounted
-  sudo ./chroot-image.sh --root rootfs.ext4 --home home.ext4 --script setup-user.sh
+  # Copy script and run it
+  sudo ./chroot-image.sh --root root.ext4 --copy myscript.sh:/tmp/myscript.sh /tmp/myscript.sh arg1 arg2
 
-  # Interactive shell for manual configuration
-  sudo ./chroot-image.sh --root rootfs.ext4 --home home.ext4
+  # Interactive shell (e.g. to copy files manually or explore)
+  sudo ./chroot-image.sh --root root.ext4 --home home.ext4
+
+  # Copy multiple files then run a command
+  sudo ./chroot-image.sh --root root.ext4 --copy cfg.ini:/etc/app/cfg.ini --copy run.sh:/tmp/run.sh /tmp/run.sh
 EOF
     exit 0
 }
@@ -70,12 +71,18 @@ EOF
 # Parse arguments
 ROOT_IMAGE=""
 HOME_IMAGE=""
-SCRIPT_PATH=""
+EXTRACT_TGZ=""
+COPY_PAIRS=()
+VERBOSE=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -h|--help)
             usage
+            ;;
+        --verbose)
+            VERBOSE=1
+            shift
             ;;
         --root)
             ROOT_IMAGE="$2"
@@ -85,15 +92,26 @@ while [[ $# -gt 0 ]]; do
             HOME_IMAGE="$2"
             shift 2
             ;;
-        --script)
-            SCRIPT_PATH="$2"
+        --extract)
+            [[ $# -ge 2 ]] || error "--extract requires tgz-path"
+            EXTRACT_TGZ="$2"
             shift 2
             ;;
-        *)
+        --copy)
+            [[ $# -ge 2 ]] || error "--copy requires src:dest"
+            COPY_PAIRS+=("$2")
+            shift 2
+            ;;
+        -*)
             error "Unknown option: $1"
+            ;;
+        *)
+            # First non-option: rest is command to run in chroot
+            break
             ;;
     esac
 done
+# Remaining "$@" is the command (possibly empty)
 
 # Validate arguments
 if [[ -z "$ROOT_IMAGE" ]]; then
@@ -108,9 +126,19 @@ if [[ -n "$HOME_IMAGE" ]] && [[ ! -f "$HOME_IMAGE" ]]; then
     error "Home image not found: $HOME_IMAGE"
 fi
 
-if [[ -n "$SCRIPT_PATH" ]] && [[ ! -f "$SCRIPT_PATH" ]]; then
-    error "Script not found: $SCRIPT_PATH"
+if [[ -n "$EXTRACT_TGZ" ]] && [[ ! -f "$EXTRACT_TGZ" ]]; then
+    error "Extract path not found: $EXTRACT_TGZ"
 fi
+
+for pair in "${COPY_PAIRS[@]}"; do
+    src="${pair%%:*}"
+    if [[ -z "$src" ]] || [[ "$src" == "$pair" ]]; then
+        error "Invalid --copy (expected src:dest): $pair"
+    fi
+    if [[ ! -e "$src" ]]; then
+        error "Copy source not found: $src"
+    fi
+done
 
 # Check if running as root
 if [[ $EUID -ne 0 ]]; then
@@ -124,6 +152,8 @@ HOME_MOUNT=""
 # Cleanup function
 cleanup() {
     local exit_code=$?
+
+    sync
 
     # Unmount home if mounted
     if [[ -n "$HOME_MOUNT" ]] && mountpoint -q "$HOME_MOUNT" 2>/dev/null; then
@@ -156,23 +186,34 @@ if [[ -n "$HOME_IMAGE" ]]; then
     mount "$HOME_IMAGE" "$HOME_MOUNT"
 fi
 
-# Execute script or start interactive shell
-if [[ -n "$SCRIPT_PATH" ]]; then
-    # Copy script into chroot
-    SCRIPT_IN_CHROOT="$MOUNT_POINT/tmp/script.sh"
-    info "Copying script to chroot: $SCRIPT_PATH -> /tmp/script.sh"
-    cp "$SCRIPT_PATH" "$SCRIPT_IN_CHROOT"
-    chmod +x "$SCRIPT_IN_CHROOT"
-    
-    # Execute script in chroot
-    info "Executing script in chroot..."
-    chroot "$MOUNT_POINT" /bin/bash /tmp/script.sh
+# Extract tgz at root if requested
+if [[ -n "$EXTRACT_TGZ" ]]; then
+    info "Extracting $EXTRACT_TGZ into chroot root..."
+    tar -xzf "$EXTRACT_TGZ" -C "$MOUNT_POINT"
+fi
+
+# Copy files into chroot
+for pair in "${COPY_PAIRS[@]}"; do
+    src="${pair%%:*}"
+    dest="${pair#*:}"
+    dest_path="$MOUNT_POINT/$dest"
+    mkdir -p "$(dirname "$dest_path")"
+    info "Copying into chroot: $src -> $dest"
+    cp -ar "$src" "$dest_path"
+done
+
+# cd $MOUNT_POINT
+# exec /bin/bash
+
+echo "running $*"
+
+# Run command or start interactive shell
+if [[ $# -gt 0 ]]; then
+    info "Running in chroot: $*"
+    chroot "$MOUNT_POINT" "$@"
     EXIT_CODE=$?
-    
-    # Cleanup will happen via trap
-    info "Script completed with exit code: $EXIT_CODE"
+    info "Command completed with exit code: $EXIT_CODE"
 else
-    # Start interactive shell
     info "Starting interactive shell in chroot..."
     info "Type 'exit' to leave and unmount images"
     echo ""
