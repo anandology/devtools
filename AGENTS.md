@@ -14,6 +14,94 @@ bd close <id>         # Complete work
 bd sync               # Sync with git
 ```
 
+## Issue-First Development
+
+**CRITICAL: Always create an issue BEFORE fixing a bug or implementing a feature.**
+
+**Wrong workflow:**
+1. ❌ Discover bug
+2. ❌ Fix it immediately  
+3. ❌ Commit the fix
+4. ❌ User asks "did you file an issue?"
+
+**Correct workflow:**
+1. ✅ Discover bug
+2. ✅ Create issue: `bd create --type bug --priority PX --title "..." --description "..."`
+3. ✅ Claim issue: `bd update <id> --status in_progress`
+4. ✅ Fix the bug
+5. ✅ Close issue: `bd close <id> --reason "Fixed in commit XXX"`
+6. ✅ Commit with issue reference in message
+
+**Why this matters:**
+- Provides audit trail of what was broken and when
+- Allows prioritization of fixes
+- Documents the problem even if fix doesn't work
+- Makes it easier to track regressions
+
+## Testing and Quality Standards
+
+**ALWAYS create a bug issue BEFORE fixing it.** Never commit a fix without tracking it in beads first.
+
+### Test What You Actually Modified
+
+**Golden Rule:** If you modify code for System X, you MUST test System X, not just System Y that uses similar code.
+
+**Example:** If you modify `vm-build.sh` (Ubuntu VM builder):
+- ❌ WRONG: Only test Alpine VMs because they're faster
+- ✅ RIGHT: Test Ubuntu VMs or manually verify Ubuntu VM build works
+- ✅ RIGHT: If you can't test Ubuntu, clearly state "UNTESTED on Ubuntu VMs"
+
+**Before committing changes:**
+1. Identify which systems your changes affect
+2. Run tests for THOSE specific systems
+3. If tests don't exist or are broken, do manual verification
+4. If you can't test, document the risk clearly
+
+### Be Honest About Test Failures
+
+**NEVER say "tests are passing" or "only one test failing" unless you've actually verified it.**
+
+**Required honesty:**
+- ✅ "Fixed 3 tests: A, B, C. Did not test D, E, F."
+- ✅ "Tests X, Y pass. Test Z still fails but unrelated to my changes."
+- ✅ "No automated tests for this. Manually verified: [list what you did]"
+- ❌ "Tests are passing" (when you only ran a subset)
+- ❌ "Only one test failing" (when you didn't check all tests)
+
+### Manual Verification for Critical Functionality
+
+**For core user workflows, ALWAYS do manual end-to-end verification:**
+
+**SSH Access (Critical):**
+- If you modify VM build, user creation, or home directory setup
+- You MUST manually SSH to a VM before committing
+- Document: "Manually verified: Built VM, ran vm-up, SSH'd successfully"
+
+**Network Connectivity (Critical):**
+- If you modify network config, TAP devices, or routing
+- You MUST verify ping/SSH connectivity
+- Document: "Manually verified: Host→Guest ping works"
+
+**VM Boot (Critical):**
+- If you modify kernel, bootloader, or init
+- You MUST verify VM boots to login prompt
+- Document: "Manually verified: VM boots, console shows login"
+
+### Test Failure Triage
+
+**If a test fails:**
+1. Determine: Is this a NEW failure from my changes, or pre-existing?
+2. If NEW: Fix it before committing (don't break working tests)
+3. If PRE-EXISTING: Document it clearly in commit message
+4. If UNSURE: Be conservative - assume you broke it
+
+### Create Issues for Gaps
+
+**If you discover:**
+- Missing test coverage → Create issue (type: bug or task, P1-P2)
+- Broken test you can't fix → Create issue, add comment with investigation
+- Manual-only verification → Create issue for automated test
+
 ## Landing the Plane (Session Completion)
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
@@ -21,7 +109,11 @@ bd sync               # Sync with git
 **MANDATORY WORKFLOW:**
 
 1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
+2. **Run quality gates** (if code changed):
+   - Run tests that cover your changes (not just any tests)
+   - Manual verification for critical functionality (SSH, networking, boot)
+   - Document what you tested and results
+   - Be honest about untested areas
 3. **Update issue status** - Close finished work, update in-progress items
 4. **PUSH TO REMOTE** - This is MANDATORY:
    ```bash
