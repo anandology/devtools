@@ -26,10 +26,10 @@ _print_result() {
     
     if [[ "$status" == "PASS" ]]; then
         echo -e "${GREEN}✓ PASS${NC}: $message"
-        ((_ASSERT_PASSED++))
+        _ASSERT_PASSED=$((_ASSERT_PASSED + 1))
     else
         echo -e "${RED}✗ FAIL${NC}: $message"
-        ((_ASSERT_FAILED++))
+        _ASSERT_FAILED=$((_ASSERT_FAILED + 1))
     fi
 }
 
@@ -165,6 +165,36 @@ assert_not_contains() {
     local message="${3:-String should not contain '$needle'}"
     
     if [[ "$haystack" != *"$needle"* ]]; then
+        _print_result "PASS" "$message"
+        return 0
+    else
+        _print_result "FAIL" "$message"
+        return 1
+    fi
+}
+
+# Assert that a file is executable
+# Usage: assert_executable <path> <message>
+assert_executable() {
+    local path="$1"
+    local message="${2:-File should be executable: $path}"
+    
+    if [[ -x "$path" ]]; then
+        _print_result "PASS" "$message"
+        return 0
+    else
+        _print_result "FAIL" "$message"
+        return 1
+    fi
+}
+
+# Assert that a bash script has valid syntax
+# Usage: assert_valid_bash <path> <message>
+assert_valid_bash() {
+    local path="$1"
+    local message="${2:-Script should have valid bash syntax: $path}"
+    
+    if bash -n "$path" 2>/dev/null; then
         _print_result "PASS" "$message"
         return 0
     else
