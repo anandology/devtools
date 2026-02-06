@@ -257,7 +257,7 @@ chroot "$ROOTFS_TEMP" systemctl enable ssh
 # Create user account WITHOUT home directory on rootfs
 # Home will be on separate volume (/dev/vdb mounted at /home)
 info "Creating user account '$USERNAME' (home will be on separate volume)..."
-chroot "$ROOTFS_TEMP" useradd -M -s /bin/bash -G sudo "$USERNAME"
+chroot "$ROOTFS_TEMP" useradd --no-create-home --home-dir "/home/$USERNAME" -s /bin/bash -G sudo "$USERNAME"
 # Allow sudo without password for convenience
 echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > "$ROOTFS_TEMP/etc/sudoers.d/$USERNAME"
 chmod 0440 "$ROOTFS_TEMP/etc/sudoers.d/$USERNAME"
@@ -328,27 +328,31 @@ info "Setting up user home directory on home volume..."
 HOME_MOUNT=$(mktemp -d)
 mount "$VM_DIR/home.ext4" "$HOME_MOUNT"
 
+# Get the actual UID:GID of the user from /etc/passwd
+USER_UID=$(chroot "$ROOTFS_TEMP" id -u "$USERNAME")
+USER_GID=$(chroot "$ROOTFS_TEMP" id -g "$USERNAME")
+
 # Create user home directory
 mkdir -p "$HOME_MOUNT/$USERNAME"
-chown 1000:1000 "$HOME_MOUNT/$USERNAME"
+chown $USER_UID:$USER_GID "$HOME_MOUNT/$USERNAME"
 chmod 755 "$HOME_MOUNT/$USERNAME"
 
 # Set up SSH keys for user
 USER_SSH_DIR="$HOME_MOUNT/$USERNAME/.ssh"
 mkdir -p "$USER_SSH_DIR"
 cat "$SSH_KEY_PATH" > "$USER_SSH_DIR/authorized_keys"
-chown -R 1000:1000 "$USER_SSH_DIR"
+chown -R $USER_UID:$USER_GID "$USER_SSH_DIR"
 chmod 700 "$USER_SSH_DIR"
 chmod 600 "$USER_SSH_DIR/authorized_keys"
 
 # Copy package files to user home
 if [[ -f "$VM_DIR/apt-packages.txt" ]]; then
     cp "$VM_DIR/apt-packages.txt" "$HOME_MOUNT/$USERNAME/apt-packages.txt"
-    chown 1000:1000 "$HOME_MOUNT/$USERNAME/apt-packages.txt"
+    chown $USER_UID:$USER_GID "$HOME_MOUNT/$USERNAME/apt-packages.txt"
 fi
 if [[ -f "$VM_DIR/packages.nix" ]]; then
     cp "$VM_DIR/packages.nix" "$HOME_MOUNT/$USERNAME/packages.nix"
-    chown 1000:1000 "$HOME_MOUNT/$USERNAME/packages.nix"
+    chown $USER_UID:$USER_GID "$HOME_MOUNT/$USERNAME/packages.nix"
 fi
 
 # Unmount home volume
