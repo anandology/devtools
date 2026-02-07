@@ -27,7 +27,7 @@ warn() {
 
 usage() {
     cat << 'EOF'
-Usage: sudo ./build-ubuntu-rootfs.sh <version> <output_path>
+Usage: sudo ./build-ubuntu-rootfs.sh [--image-size SIZE] <version> <output_path>
 
 Build a standard Ubuntu rootfs ext4 image for Firecracker VMs.
 
@@ -41,37 +41,56 @@ No custom networking, users, or SSH keys are configured.
 Use configure-ubuntu-rootfs.sh to customize the image.
 
 Arguments:
-  version       Ubuntu version: 20.04, 22.04, or 24.04
-  output_path   Path to output ext4 image file
-
-Environment variables:
-  IMAGE_SIZE_MB     Size of the ext4 image in MB (default: 2048)
+  --image-size SIZE  Size of the ext4 image (e.g., 8G, 2048M) (default: 2G)
+  version            Ubuntu version: 20.04, 22.04, or 24.04
+  output_path        Path to output ext4 image file
+  -h, --help         Show this help message
 
 Examples:
   sudo ./build-ubuntu-rootfs.sh 24.04 /tmp/ubuntu-24.04.ext4
-  sudo IMAGE_SIZE_MB=4096 ./build-ubuntu-rootfs.sh 22.04 ./rootfs.ext4
+  sudo ./build-ubuntu-rootfs.sh --image-size 4G 22.04 ./rootfs.ext4
 EOF
     exit 0
 }
 
-# Handle --help
-if [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]]; then
-    usage
-fi
+# Parse arguments
+IMAGE_SIZE="2G"
+UBUNTU_VERSION=""
+OUTPUT_PATH=""
 
-# Check required arguments
-if [[ $# -lt 2 ]]; then
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            usage
+            ;;
+        --image-size)
+            IMAGE_SIZE="$2"
+            shift 2
+            ;;
+        -*)
+            error "Unknown option: $1"
+            ;;
+        *)
+            if [[ -z "$UBUNTU_VERSION" ]]; then
+                UBUNTU_VERSION="$1"
+            elif [[ -z "$OUTPUT_PATH" ]]; then
+                OUTPUT_PATH="$1"
+            else
+                error "Unexpected argument: $1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Validate required arguments
+if [[ -z "$UBUNTU_VERSION" ]] || [[ -z "$OUTPUT_PATH" ]]; then
     echo -e "${RED}Error: Missing required arguments${NC}" >&2
     echo "" >&2
-    echo "Usage: sudo ./build-ubuntu-rootfs.sh <version> <output_path>" >&2
+    echo "Usage: sudo ./build-ubuntu-rootfs.sh [--image-size SIZE] <version> <output_path>" >&2
     echo "Run with --help for more information." >&2
     exit 1
 fi
-
-# Configuration
-UBUNTU_VERSION="$1"
-OUTPUT_PATH="$2"
-IMAGE_SIZE_MB="${IMAGE_SIZE_MB:-2048}"
 
 # Map version to codename
 case "$UBUNTU_VERSION" in
@@ -87,11 +106,16 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # Check for required tools
-for cmd in mkfs.ext4 mount umount chroot; do
+for cmd in chroot; do
     if ! command -v $cmd &> /dev/null; then
-        error "$cmd is not installed. Install with: sudo apt install e2fsprogs util-linux"
+        error "$cmd is not installed. Install with: sudo apt install util-linux"
     fi
 done
+
+# Get script directory to find make-image.sh and chroot-image.sh
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MAKE_IMAGE_SCRIPT="$SCRIPT_DIR/make-image.sh"
+CHROOT_IMAGE_SCRIPT="$SCRIPT_DIR/chroot-image.sh"
 
 # Check for debootstrap or Docker
 check_docker() {
@@ -129,7 +153,7 @@ fi
 
 info "Building Ubuntu $UBUNTU_VERSION ($UBUNTU_CODENAME) rootfs..."
 info "  Output: $OUTPUT_PATH"
-info "  Size: ${IMAGE_SIZE_MB}MB"
+info "  Size: $IMAGE_SIZE"
 
 # Create output directory
 OUTPUT_DIR=$(dirname "$OUTPUT_PATH")
@@ -168,27 +192,17 @@ fi
 # Minimal configuration - just enough to boot
 info "Applying minimal configuration..."
 
-# Set default root password
-chroot "$ROOTFS_TEMP" bash -c "echo 'root:root' | chpasswd"
+# Create ext4 filesystem image using make-image.sh
+info "Creating ext4 image ($IMAGE_SIZE)..."
+"$MAKE_IMAGE_SCRIPT" --size "$IMAGE_SIZE" --path "$OUTPUT_PATH"
 
-# Enable SSH service (but don't configure it)
-chroot "$ROOTFS_TEMP" systemctl enable ssh
-
-# Create ext4 filesystem image
-info "Creating ext4 image (${IMAGE_SIZE_MB}MB)..."
-dd if=/dev/zero of="$OUTPUT_PATH" bs=1M count=$IMAGE_SIZE_MB status=progress
-mkfs.ext4 -F "$OUTPUT_PATH"
-
-# Mount and copy files
-MOUNT_POINT=$(mktemp -d)
-trap "umount $MOUNT_POINT 2>/dev/null || true; rm -rf $MOUNT_POINT $ROOTFS_TEMP" EXIT
-
-mount "$OUTPUT_PATH" "$MOUNT_POINT"
+# Copy files to image using chroot-image.sh
 info "Copying files to image..."
-cp -a "$ROOTFS_TEMP/"* "$MOUNT_POINT/"
-sync
-umount "$MOUNT_POINT"
-rm -rf "$MOUNT_POINT"
+# Copy the entire rootfs temp directory to the image
+"$CHROOT_IMAGE_SCRIPT" \
+    --root "$OUTPUT_PATH" \
+    --import $ROOTFS_TEMP \
+    --verbose
 
 # Set ownership to calling user
 if [[ -n "${SUDO_USER:-}" ]]; then
