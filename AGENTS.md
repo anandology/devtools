@@ -1,3 +1,106 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+**devtools** is a Firecracker VM management framework providing sudo-free daily VM operations. The main code lives in `firecracker-sandbox/`. It's entirely shell scripts (~3000 lines of bash).
+
+## Key Commands
+
+All commands run from `firecracker-sandbox/`:
+
+```bash
+# VM lifecycle
+vm.sh init <name>              # Create VM config (no sudo)
+sudo vm.sh build <name>        # Build VM images + TAP device
+vm.sh up <name>                # Start VM (no sudo)
+vm.sh console <name>           # Start with console access (no sudo)
+vm.sh ssh <name> [args]        # SSH to VM (no sudo)
+vm.sh down <name>              # Stop VM (no sudo)
+vm.sh status <name>            # Check status (no sudo)
+vm.sh list                     # List all VMs (no sudo)
+sudo vm.sh destroy <name>      # Delete VM
+
+# Global setup/cleanup (one-time, requires sudo)
+sudo bin/setup.sh              # Create bridge network, download Firecracker
+sudo bin/cleanup.sh            # Remove bridge and all VMs
+```
+
+### Testing
+
+```bash
+./tests/quick-check.sh              # Unit tests only (~15s)
+./tests/run-all-fast-tests.sh       # Unit + Alpine tests (~60s)
+./tests/run-all-tests.sh            # Full suite including Ubuntu (~5min)
+./tests/run-all-tests.sh --fast     # Skip Ubuntu tests
+./tests/run-all-tests.sh --unit-only
+
+# Run individual tests directly:
+./tests/unit/test-kvm-access.sh
+./tests/integration/test-full-lifecycle.sh
+```
+
+## Architecture
+
+### Sudo Separation (core design principle)
+
+- **Privileged (one-time):** `setup.sh`, `vm build`, `vm destroy` — create bridge, TAP devices, rootfs images
+- **Unprivileged (daily):** `vm up`, `vm down`, `vm ssh` — TAP devices are user-owned after build
+
+### Script Organization
+
+`vm.sh` is a CLI dispatcher that routes to `bin/vm-*.sh` scripts. All scripts source `bin/config.sh` for shared paths and constants.
+
+```
+firecracker-sandbox/
+├── vm.sh                  # CLI dispatcher
+├── bin/
+│   ├── config.sh          # Global config (bridge IP, kernel version, paths)
+│   ├── setup.sh / cleanup.sh
+│   ├── vm-init.sh / vm-build.sh / vm-up.sh / vm-down.sh / vm-ssh.sh
+│   ├── vm-console.sh / vm-status.sh / vm-list.sh / vm-destroy.sh
+│   ├── first-boot.sh
+│   └── build/             # Image building utilities
+│       ├── make-image.sh / chroot-image.sh
+│       ├── build-alpine-rootfs.sh / build-ubuntu-rootfs.sh
+│       ├── configure-ubuntu-rootfs.sh
+│       └── utils.sh       # Shared functions (setup_hostname, setup_ssh_keys, etc.)
+├── tests/
+│   ├── lib/               # assert.sh, cleanup.sh, vm-helpers.sh
+│   ├── unit/              # Host prerequisite tests (no VMs)
+│   ├── integration/       # Tests that boot VMs
+│   └── chroot/            # In-chroot tests
+├── vms/<name>/            # Per-VM instance dirs (config.sh, rootfs.ext4, home.ext4, state/)
+└── kernels/               # Shared Firecracker kernels
+```
+
+### Networking
+
+Single bridge `br-firecracker` at `172.16.0.1/24`. Each VM gets a dedicated TAP device and a unique IP in the `172.16.0.0/24` range. NAT provides internet access. VMs communicate directly via the bridge.
+
+While this is the current design, using a seperate network for each VM without using a bridge is also being considered.
+
+### Per-VM State
+
+Each VM stores runtime state in `vms/<name>/state/`: `vm.pid`, `vm.sock`, `ip.txt`, `tap_name.txt`, `console.log`, `vm-config.json`.
+
+### Shell Script Conventions
+
+- `#!/bin/bash` with `set -e`
+- `SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"` then source `config.sh`
+- Color output: `error()` (red), `info()` (green), `warn()` (yellow)
+- Validate inputs and prerequisites before costly operations
+- `snake_case` for functions and variables
+
+### Key Config Values (bin/config.sh)
+
+- Firecracker: v1.7.0
+- Kernel: 6.1.77
+- Bridge: `br-firecracker` / `172.16.0.1/24`
+
+---
+
 # Agent Instructions
 
 This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
@@ -38,7 +141,7 @@ bd sync               # Sync with git
 
 **Wrong workflow:**
 1. ❌ Discover bug
-2. ❌ Fix it immediately  
+2. ❌ Fix it immediately
 3. ❌ Commit the fix
 4. ❌ User asks "did you file an issue?"
 
