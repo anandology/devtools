@@ -27,6 +27,7 @@ SCRIPTS=(
     "bin/vm-status.sh"
     "bin/vm-list.sh"
     "bin/vm-console.sh"
+    "bin/vm-doctor.sh"
     "bin/setup.sh"
     "bin/cleanup.sh"
     "bin/first-boot.sh"

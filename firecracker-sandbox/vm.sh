@@ -33,6 +33,7 @@ Commands:
   ssh <name> [args]        SSH into a running VM
   status <name>            Show VM status
   list                     List all VMs
+  doctor                   Diagnose VM environment health
   destroy <name>           Destroy a VM (requires sudo)
 
 Examples:
@@ -110,6 +111,10 @@ case "$COMMAND" in
     
     list)
         exec "$BIN_DIR/vm-list.sh" "$@"
+        ;;
+    
+    doctor)
+        exec "$BIN_DIR/vm-doctor.sh" "$@"
         ;;
     
     destroy)
