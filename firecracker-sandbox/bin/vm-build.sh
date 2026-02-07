@@ -106,14 +106,21 @@ else
     info "✓ Kernel already present"
 fi
 
-# Build rootfs using build-ubuntu-rootfs.sh
-info "Building rootfs (this may take a few minutes)..."
+# Use or build cached rootfs for this Ubuntu version
+ROOTFS_CACHE="$IMAGES_DIR/ubuntu-${UBUNTU_VERSION}-rootfs.ext4"
 BUILD_ROOTFS_SCRIPT="$BIN_DIR/build/build-ubuntu-rootfs.sh"
 
-# Build the rootfs image
-"$BUILD_ROOTFS_SCRIPT" --image-size "$ROOTFS_SIZE" "$UBUNTU_VERSION" "$VM_DIR/rootfs.ext4"
-
-info "✓ Rootfs image created"
+if [[ -f "$ROOTFS_CACHE" ]]; then
+    info "Using cached rootfs: $ROOTFS_CACHE"
+    cp "$ROOTFS_CACHE" "$VM_DIR/rootfs.ext4"
+    info "✓ Rootfs image copied"
+else
+    info "Building rootfs (this may take a few minutes)..."
+    mkdir -p "$IMAGES_DIR"
+    "$BUILD_ROOTFS_SCRIPT" --image-size "$ROOTFS_SIZE" "$UBUNTU_VERSION" "$ROOTFS_CACHE"
+    cp "$ROOTFS_CACHE" "$VM_DIR/rootfs.ext4"
+    info "✓ Rootfs image created and cached"
+fi
 
 # Copy first-boot script to rootfs using chroot-image.sh
 info "Copying first-boot script..."
