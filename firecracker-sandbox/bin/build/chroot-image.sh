@@ -1,16 +1,16 @@
 #!/bin/bash
-# Execute a command or interactive shell inside a chrooted rootfs/home image
+# Mount rootfs/home images and optionally execute a command inside the chroot
 #
 # This script handles mounting/unmounting of rootfs and optional home images.
 # Use --extract to unpack a tgz at the root of the chroot, --copy to copy files
-# into the chroot, then run a command or start an interactive shell.
+# into the chroot, then optionally run a command. If no command is provided,
+# the script will only perform the copy/extract operations and exit.
 #
 # Usage:
-#   chroot-image.sh --root rootfs.ext4 [--home home.ext4] [--extract tgz-path] [--copy src:dest ...] [--verbose] [command arg1 arg2 ...]
+#   chroot-image.sh --root rootfs.ext4 [--home home.ext4] [--extract tgz-path] [--copy src:dest ...] [--import dir-path] [--verbose] [command arg1 arg2 ...]
 #
-# If a command is given, it is run inside the chroot. If no arguments follow
-# the flags, an interactive bash shell is started (useful for copying files
-# and exploring).
+# If a command is given, it is run inside the chroot. If no command is provided,
+# the script will only perform mount, extract, and copy operations, then exit.
 
 set -euo pipefail
 
@@ -37,20 +37,22 @@ warn() {
 
 usage() {
     cat << 'EOF'
-Usage: sudo ./chroot-image.sh --root <rootfs.ext4> [--home <home.ext4>] [--extract <tgz-path>] [--copy src:dest ...] [--verbose] [command arg1 arg2 ...]
+Usage: sudo ./chroot-image.sh --root <rootfs.ext4> [--home <home.ext4>] [--extract <tgz-path>] [--copy src:dest ...] [--import <dir-path>] [--verbose] [command arg1 arg2 ...]
 
-Execute a command or interactive shell inside a chrooted rootfs image.
+Mount rootfs/home images and optionally execute a command inside the chroot.
 
 Arguments:
   --root PATH      Path to rootfs ext4 image (required)
   --home PATH      Path to home ext4 image (optional, will be mounted at /home)
-  --extract PATH   Extract this .tgz/.tar.gz at the root of the chroot before running
+  --extract PATH   Extract this .tgz/.tar.gz at the root of the chroot
   --copy SRC:DEST  Copy file SRC from host to DEST inside chroot (may be repeated)
+  --import PATH    Copy all files from directory PATH into the root of the chroot (preserves permissions)
   --verbose        Print progress messages
   -h, --help       Show this help message
 
   Remaining arguments are the command to run inside the chroot (path + args).
-  If no command is given, an interactive bash shell is started.
+  If no command is given, the script will only perform mount, extract, and copy
+  operations, then exit (useful for just copying files to an image).
 
 Examples:
   # Extract Alpine rootfs tgz into empty image, then run a command
@@ -59,8 +61,8 @@ Examples:
   # Copy script and run it
   sudo ./chroot-image.sh --root root.ext4 --copy myscript.sh:/tmp/myscript.sh /tmp/myscript.sh arg1 arg2
 
-  # Interactive shell (e.g. to copy files manually or explore)
-  sudo ./chroot-image.sh --root root.ext4 --home home.ext4
+  # Just copy files to an image (no command execution)
+  sudo ./chroot-image.sh --root root.ext4 --home home.ext4 --copy file1.txt:/tmp/file1.txt --copy file2.txt:/tmp/file2.txt
 
   # Copy multiple files then run a command
   sudo ./chroot-image.sh --root root.ext4 --copy cfg.ini:/etc/app/cfg.ini --copy run.sh:/tmp/run.sh /tmp/run.sh
@@ -73,6 +75,7 @@ ROOT_IMAGE=""
 HOME_IMAGE=""
 EXTRACT_TGZ=""
 COPY_PAIRS=()
+IMPORT_DIR=""
 VERBOSE=""
 
 while [[ $# -gt 0 ]]; do
@@ -102,6 +105,11 @@ while [[ $# -gt 0 ]]; do
             COPY_PAIRS+=("$2")
             shift 2
             ;;
+        --import)
+            [[ $# -ge 2 ]] || error "--import requires dir-path"
+            IMPORT_DIR="$2"
+            shift 2
+            ;;
         -*)
             error "Unknown option: $1"
             ;;
@@ -128,6 +136,10 @@ fi
 
 if [[ -n "$EXTRACT_TGZ" ]] && [[ ! -f "$EXTRACT_TGZ" ]]; then
     error "Extract path not found: $EXTRACT_TGZ"
+fi
+
+if [[ -n "$IMPORT_DIR" ]] && [[ ! -d "$IMPORT_DIR" ]]; then
+    error "Import directory not found: $IMPORT_DIR"
 fi
 
 for pair in "${COPY_PAIRS[@]}"; do
@@ -192,6 +204,13 @@ if [[ -n "$EXTRACT_TGZ" ]]; then
     tar -xzf "$EXTRACT_TGZ" -C "$MOUNT_POINT"
 fi
 
+# Import directory into chroot root if requested
+if [[ -n "$IMPORT_DIR" ]]; then
+    info "Importing directory $IMPORT_DIR into chroot root..."
+    # Copy all contents (including hidden files) preserving permissions
+    cp -a "$IMPORT_DIR"/. "$MOUNT_POINT/"
+fi
+
 # Copy files into chroot
 for pair in "${COPY_PAIRS[@]}"; do
     src="${pair%%:*}"
@@ -202,23 +221,14 @@ for pair in "${COPY_PAIRS[@]}"; do
     cp -ar "$src" "$dest_path"
 done
 
-# cd $MOUNT_POINT
-# exec /bin/bash
-
-echo "running $*"
-
-# Run command or start interactive shell
+# Run command if provided
 if [[ $# -gt 0 ]]; then
     info "Running in chroot: $*"
     chroot "$MOUNT_POINT" "$@"
     EXIT_CODE=$?
     info "Command completed with exit code: $EXIT_CODE"
+    exit $EXIT_CODE
 else
-    info "Starting interactive shell in chroot..."
-    info "Type 'exit' to leave and unmount images"
-    echo ""
-    chroot "$MOUNT_POINT" /bin/bash
-    EXIT_CODE=$?
+    info "No command provided. Mount, extract, and copy operations completed."
+    exit 0
 fi
-
-exit $EXIT_CODE
