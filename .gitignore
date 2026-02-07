@@ -1,3 +1,4 @@
 implement.sh
 dist/
 firecracker-sandbox/images
+*.ext4
