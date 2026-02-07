@@ -80,6 +80,7 @@ setup_fstab() {
 # setup_sshd [permit_root_login] [password_auth] [pubkey_auth]
 # Configures SSH daemon settings by appending to /etc/ssh/sshd_config
 # Defaults: PermitRootLogin yes, PasswordAuthentication yes, PubkeyAuthentication yes
+# Also enables the SSH service
 setup_sshd() {
     local permit_root="${1:-yes}"
     local password_auth="${2:-yes}"
@@ -92,4 +93,41 @@ PermitRootLogin $permit_root
 PasswordAuthentication $password_auth
 PubkeyAuthentication $pubkey_auth
 EOF
+
+    # Enable SSH service
+    systemctl enable ssh 2>/dev/null || true
+}
+
+# setup_networking <ip_address> <gateway> <dns_servers>
+# Configures static networking with systemd-networkd
+# ip_address: IP address with CIDR notation (e.g., 172.16.0.2/24)
+# gateway: Gateway IP address
+# dns_servers: Comma-separated list of DNS servers
+setup_networking() {
+    local ip_address="$1"
+    local gateway="$2"
+    local dns_servers="$3"
+    
+    mkdir -p /etc/systemd/network
+    
+    # Convert comma-separated DNS to separate lines
+    local dns_config=""
+    IFS=',' read -ra dns_array <<< "$dns_servers"
+    for dns in "${dns_array[@]}"; do
+        dns_config="${dns_config}DNS=$dns
+"
+    done
+    
+    cat > /etc/systemd/network/10-eth0.network << EOF
+[Match]
+Name=eth0
+
+[Network]
+Address=$ip_address
+Gateway=$gateway
+$dns_config
+EOF
+    
+    # Enable systemd-networkd
+    systemctl enable systemd-networkd 2>/dev/null || true
 }
