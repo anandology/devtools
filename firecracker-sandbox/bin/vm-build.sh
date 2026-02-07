@@ -53,12 +53,6 @@ if [[ -f "$VM_DIR/rootfs.ext4" ]]; then
     error "VM '$VM_NAME' is already built. Destroy it first to rebuild."
 fi
 
-# Check bridge is set up
-BRIDGE_LINK="$STATE_DIR/bridge"
-if [[ ! -L "$BRIDGE_LINK" ]] || [[ ! -e "$BRIDGE_LINK" ]]; then
-    error "Bridge not set up. Run: sudo $BIN_DIR/setup.sh"
-fi
-
 # Load configuration
 info "Loading configuration..."
 source "$VM_DIR/config.sh"
@@ -72,11 +66,16 @@ if [[ -z "$SSH_KEY_PATH" ]] || [[ ! -f "$SSH_KEY_PATH" ]]; then
     error "SSH_KEY_PATH not set or file doesn't exist: $SSH_KEY_PATH"
 fi
 
-# Read IP
+# Read IP and gateway
 if [[ ! -f "$STATE_DIR_VM/ip.txt" ]]; then
     error "IP file not found: $STATE_DIR_VM/ip.txt"
 fi
 GUEST_IP=$(cat "$STATE_DIR_VM/ip.txt")
+
+if [[ ! -f "$STATE_DIR_VM/gateway.txt" ]]; then
+    error "Gateway file not found: $STATE_DIR_VM/gateway.txt"
+fi
+GATEWAY_IP=$(cat "$STATE_DIR_VM/gateway.txt")
 
 info "Building VM '$VM_NAME' with IP $GUEST_IP..."
 
@@ -177,7 +176,7 @@ cp "$SSH_KEY_PATH" "$TEMP_SSH_KEY"
     /bin/bash -c "/tmp/bin/build/configure-ubuntu-rootfs.sh \
         --hostname '$VM_NAME' \
         --ip '$GUEST_IP' \
-        --gateway '172.16.0.1' \
+        --gateway '$GATEWAY_IP' \
         --dns '8.8.8.8,8.8.4.4' \
         --user '$USERNAME' \
         --ssh-key /tmp/ssh_key.pub \
@@ -231,12 +230,18 @@ if ip link show "$TAP_NAME" &>/dev/null; then
     warn "TAP device $TAP_NAME already exists, reusing it"
 else
     ip tuntap add "$TAP_NAME" mode tap user "$SUDO_USER"
-    ip link set "$TAP_NAME" master "$BRIDGE_NAME"
+    ip addr add "$GATEWAY_IP/24" dev "$TAP_NAME"
     ip link set "$TAP_NAME" up
 fi
 
+# Add per-TAP FORWARD rule for outbound traffic
+HOST_IFACE=$(detect_host_interface)
+iptables -C FORWARD -i "$TAP_NAME" -o "$HOST_IFACE" -j ACCEPT 2>/dev/null || \
+    iptables -A FORWARD -i "$TAP_NAME" -o "$HOST_IFACE" -j ACCEPT
+
 echo "$TAP_NAME" > "$STATE_DIR_VM/tap_name.txt"
-info "✓ TAP device created and attached to bridge"
+echo "$HOST_IFACE" > "$STATE_DIR_VM/host_iface.txt"
+info "✓ TAP device created with IP $GATEWAY_IP/24"
 
 # Mark as built
 date -Iseconds > "$STATE_DIR_VM/built"

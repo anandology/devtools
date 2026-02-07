@@ -45,25 +45,19 @@ if [[ -d "$VM_DIR" ]]; then
     error "VM '$VM_NAME' already exists at $VM_DIR"
 fi
 
-# Check if bridge is set up
-BRIDGE_LINK="$STATE_DIR/bridge"
-if [[ ! -L "$BRIDGE_LINK" ]] || [[ ! -e "$BRIDGE_LINK" ]]; then
-    error "Bridge not set up. Run: sudo $BIN_DIR/setup.sh"
-fi
-
 info "Initializing VM '$VM_NAME'..."
 
 # Create VM directory structure
 mkdir -p "$STATE_DIR_VM"
 
-# Auto-assign IP address
-info "Assigning IP address..."
-NEXT_IP=""
-for i in {2..254}; do
-    candidate_ip="172.16.0.$i"
+# Auto-assign subnet index (each VM gets its own /24 subnet)
+info "Assigning subnet..."
+SUBNET_INDEX=""
+for i in $(seq 0 255); do
+    candidate_ip="${SUBNET_PREFIX}.${i}.2"
     in_use=false
-    
-    # Check if IP is already assigned to any VM
+
+    # Check if this subnet is already assigned to any VM
     for vm_dir in "$VMS_DIR"/*/ ; do
         if [[ -d "$vm_dir" ]] && [[ -f "$vm_dir/state/ip.txt" ]]; then
             existing_ip=$(cat "$vm_dir/state/ip.txt")
@@ -73,19 +67,23 @@ for i in {2..254}; do
             fi
         fi
     done
-    
+
     if [[ "$in_use" == false ]]; then
-        NEXT_IP="$candidate_ip"
+        SUBNET_INDEX="$i"
         break
     fi
 done
 
-if [[ -z "$NEXT_IP" ]]; then
-    error "No available IP addresses in range 172.16.0.2-254"
+if [[ -z "$SUBNET_INDEX" ]]; then
+    error "No available subnets in ${SUBNET_PREFIX}.0-255.0/24 range"
 fi
 
-echo "$NEXT_IP" > "$STATE_DIR_VM/ip.txt"
-info "✓ Assigned IP: $NEXT_IP"
+GUEST_IP="${SUBNET_PREFIX}.${SUBNET_INDEX}.2"
+GATEWAY_IP="${SUBNET_PREFIX}.${SUBNET_INDEX}.1"
+
+echo "$GUEST_IP" > "$STATE_DIR_VM/ip.txt"
+echo "$GATEWAY_IP" > "$STATE_DIR_VM/gateway.txt"
+info "✓ Assigned subnet: ${SUBNET_PREFIX}.${SUBNET_INDEX}.0/24 (guest=$GUEST_IP, gateway=$GATEWAY_IP)"
 
 # Detect SSH key
 info "Detecting SSH key..."
@@ -186,7 +184,7 @@ info ""
 info "========================================="
 info "  VM '$VM_NAME' initialized"
 info "========================================="
-info "IP: $NEXT_IP"
+info "IP: $GUEST_IP (gateway: $GATEWAY_IP)"
 info ""
 info "Files created:"
 info "  Config:   $VM_DIR/config.sh"

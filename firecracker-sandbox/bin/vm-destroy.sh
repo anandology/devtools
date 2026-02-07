@@ -87,20 +87,23 @@ if [[ -f "$STATE_DIR_VM/vm.pid" ]]; then
     fi
 fi
 
-# Remove TAP device
+# Remove TAP device and associated FORWARD rules
 if [[ -f "$STATE_DIR_VM/tap_name.txt" ]]; then
     TAP_NAME=$(cat "$STATE_DIR_VM/tap_name.txt")
-    if ip link show "$TAP_NAME" &>/dev/null; then
-        info "Removing TAP device $TAP_NAME..."
-        ip link delete "$TAP_NAME" 2>/dev/null || warn "Could not remove TAP device"
-    fi
 else
-    # Try default TAP name
     TAP_NAME="tap-$VM_NAME"
-    if ip link show "$TAP_NAME" &>/dev/null; then
-        info "Removing TAP device $TAP_NAME..."
-        ip link delete "$TAP_NAME" 2>/dev/null || warn "Could not remove TAP device"
-    fi
+fi
+
+# Remove per-TAP FORWARD rule
+HOST_IFACE=$(cat "$STATE_DIR_VM/host_iface.txt" 2>/dev/null || detect_host_interface)
+if [[ -n "$HOST_IFACE" ]]; then
+    iptables -D FORWARD -i "$TAP_NAME" -o "$HOST_IFACE" -j ACCEPT 2>/dev/null || true
+fi
+
+# Delete TAP device
+if ip link show "$TAP_NAME" &>/dev/null; then
+    info "Removing TAP device $TAP_NAME..."
+    ip link delete "$TAP_NAME" 2>/dev/null || warn "Could not remove TAP device"
 fi
 
 # Delete VM files

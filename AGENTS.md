@@ -23,8 +23,8 @@ vm.sh list                     # List all VMs (no sudo)
 sudo vm.sh destroy <name>      # Delete VM
 
 # Global setup/cleanup (one-time, requires sudo)
-sudo bin/setup.sh              # Create bridge network, download Firecracker
-sudo bin/cleanup.sh            # Remove bridge and all VMs
+sudo bin/setup.sh              # Enable NAT, download Firecracker
+sudo bin/cleanup.sh            # Remove NAT rules and all VMs
 ```
 
 ### Testing
@@ -45,7 +45,7 @@ sudo bin/cleanup.sh            # Remove bridge and all VMs
 
 ### Sudo Separation (core design principle)
 
-- **Privileged (one-time):** `setup.sh`, `vm build`, `vm destroy` — create bridge, TAP devices, rootfs images
+- **Privileged (one-time):** `setup.sh`, `vm build`, `vm destroy` — enable NAT, create TAP devices, rootfs images
 - **Unprivileged (daily):** `vm up`, `vm down`, `vm ssh` — TAP devices are user-owned after build
 
 ### Script Organization
@@ -56,7 +56,7 @@ sudo bin/cleanup.sh            # Remove bridge and all VMs
 firecracker-sandbox/
 ├── vm.sh                  # CLI dispatcher
 ├── bin/
-│   ├── config.sh          # Global config (bridge IP, kernel version, paths)
+│   ├── config.sh          # Global config (subnet prefix, kernel version, paths)
 │   ├── setup.sh / cleanup.sh
 │   ├── vm-init.sh / vm-build.sh / vm-up.sh / vm-down.sh / vm-ssh.sh
 │   ├── vm-console.sh / vm-status.sh / vm-list.sh / vm-destroy.sh
@@ -77,13 +77,16 @@ firecracker-sandbox/
 
 ### Networking
 
-Single bridge `br-firecracker` at `172.16.0.1/24`. Each VM gets a dedicated TAP device and a unique IP in the `172.16.0.0/24` range. NAT provides internet access. VMs communicate directly via the bridge.
-
-While this is the current design, using a seperate network for each VM without using a bridge is also being considered.
+Each VM gets its own /24 subnet with a direct TAP device (no bridge). For VM with subnet index N:
+- TAP device: `tap-<name>` with IP `172.16.N.1/24`
+- Guest: `172.16.N.2/24` with gateway `172.16.N.1`
+- NAT via MASQUERADE on the host interface provides internet access
+- Per-TAP FORWARD rules allow outbound traffic; global conntrack rule handles return traffic
+- Inter-VM communication is not supported
 
 ### Per-VM State
 
-Each VM stores runtime state in `vms/<name>/state/`: `vm.pid`, `vm.sock`, `ip.txt`, `tap_name.txt`, `console.log`, `vm-config.json`.
+Each VM stores runtime state in `vms/<name>/state/`: `vm.pid`, `vm.sock`, `ip.txt`, `gateway.txt`, `tap_name.txt`, `host_iface.txt`, `console.log`, `vm-config.json`.
 
 ### Shell Script Conventions
 
@@ -97,7 +100,7 @@ Each VM stores runtime state in `vms/<name>/state/`: `vm.pid`, `vm.sock`, `ip.tx
 
 - Firecracker: v1.7.0
 - Kernel: 6.1.77
-- Bridge: `br-firecracker` / `172.16.0.1/24`
+- Subnet prefix: `172.16` (each VM gets `172.16.N.0/24`)
 
 ---
 

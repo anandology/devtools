@@ -84,40 +84,9 @@ _print_result "PASS" "All prerequisites available" || true
 echo ""
 echo "Setting up test environment..."
 
-# Set up minimal bridge infrastructure for testing
-# Create a fake bridge device for vm-init.sh validation
-# STATE_DIR is defined in config.sh as $VMS_ROOT/state
+# Set up state directory for testing
 STATE_DIR="$VMS_ROOT/state"
 mkdir -p "$STATE_DIR"
-
-# Create a real bridge for testing (or use existing one)
-BRIDGE_NAME="br-firecracker-test"
-if ! ip link show "$BRIDGE_NAME" &>/dev/null; then
-    echo "  Creating test bridge: $BRIDGE_NAME"
-    if sudo ip link add "$BRIDGE_NAME" type bridge 2>/dev/null; then
-        sudo ip addr add 172.16.0.1/24 dev "$BRIDGE_NAME" 2>/dev/null || true
-        sudo ip link set dev "$BRIDGE_NAME" up
-        register_cleanup "sudo ip link delete '$BRIDGE_NAME' 2>/dev/null || true"
-        
-        # Create symlink for vm-init.sh check
-        ln -sf "/sys/class/net/$BRIDGE_NAME" "$STATE_DIR/bridge"
-        register_cleanup "rm -f '$STATE_DIR/bridge'"
-        
-        _print_result "PASS" "Test bridge created" || true
-    else
-        echo "  WARN: Could not create bridge, will use mock"
-        # Create a mock bridge link for testing
-        touch "$STATE_DIR/bridge-mock"
-        ln -sf "$STATE_DIR/bridge-mock" "$STATE_DIR/bridge"
-        register_cleanup "rm -f '$STATE_DIR/bridge' '$STATE_DIR/bridge-mock'"
-        _print_result "PASS" "Mock bridge created" || true
-    fi
-else
-    echo "  Using existing bridge: $BRIDGE_NAME"
-    ln -sf "/sys/class/net/$BRIDGE_NAME" "$STATE_DIR/bridge"
-    register_cleanup "rm -f '$STATE_DIR/bridge'"
-    _print_result "PASS" "Using existing bridge" || true
-fi
 
 echo ""
 echo "=========================================="

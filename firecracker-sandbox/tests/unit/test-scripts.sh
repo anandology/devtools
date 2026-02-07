@@ -15,9 +15,9 @@ echo ""
 
 # List of scripts to test
 SCRIPTS=(
-    "bin/vm-build/build-alpine-rootfs.sh"
-    "bin/vm-build/build-ubuntu-rootfs.sh"
-    "bin/vm-build/configure-ubuntu-rootfs.sh"
+    "bin/build/build-alpine-rootfs.sh"
+    "bin/build/build-ubuntu-rootfs.sh"
+    "bin/build/configure-ubuntu-rootfs.sh"
     "bin/vm-up.sh"
     "bin/vm-down.sh"
     "bin/vm-init.sh"
@@ -29,8 +29,6 @@ SCRIPTS=(
     "bin/vm-console.sh"
     "bin/setup.sh"
     "bin/cleanup.sh"
-    "bin/bridge-up.sh"
-    "bin/bridge-down.sh"
     "bin/first-boot.sh"
     "vm.sh"
 )

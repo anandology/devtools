@@ -3,7 +3,8 @@
 # Usage: sudo ./build-alpine-rootfs.sh [output_path] [alpine_version]
 #
 # This creates a lightweight Alpine Linux rootfs (~10MB) that boots in ~500ms
-# Network is configured statically: 172.16.0.2/24 with gateway 172.16.0.1
+# Network is configured statically via GUEST_IP and GATEWAY_IP env vars
+# Defaults: GUEST_IP=172.16.0.2, GATEWAY_IP=172.16.0.1
 
 set -euo pipefail
 
@@ -32,6 +33,8 @@ ALPINE_MIRROR="https://dl-cdn.alpinelinux.org/alpine"
 OUTPUT_PATH="${1:-$(dirname "$0")/../../tests/images/alpine-test.ext4}"
 IMAGE_SIZE_MB="${IMAGE_SIZE_MB:-50}"
 ROOT_PASSWORD="${ROOT_PASSWORD:-root}"
+GUEST_IP="${GUEST_IP:-172.16.0.2}"
+GATEWAY_IP="${GATEWAY_IP:-172.16.0.1}"
 
 # Derived values
 ALPINE_ARCH="x86_64"
@@ -86,17 +89,17 @@ cat > "$ROOTFS_TEMP/etc/hosts" << 'EOF'
 EOF
 
 # Configure networking with static IP
-info "Configuring static network (172.16.0.2/24)..."
+info "Configuring static network ($GUEST_IP/24, gateway $GATEWAY_IP)..."
 mkdir -p "$ROOTFS_TEMP/etc/network"
-cat > "$ROOTFS_TEMP/etc/network/interfaces" << 'EOF'
+cat > "$ROOTFS_TEMP/etc/network/interfaces" << EOF
 auto lo
 iface lo inet loopback
 
 auto eth0
 iface eth0 inet static
-    address 172.16.0.2
+    address $GUEST_IP
     netmask 255.255.255.0
-    gateway 172.16.0.1
+    gateway $GATEWAY_IP
     up echo nameserver 8.8.8.8 > /etc/resolv.conf
     up echo nameserver 8.8.4.4 >> /etc/resolv.conf
 EOF
@@ -215,13 +218,13 @@ else
 fi
 
 # Create a simple test script in the VM
-cat > "$ROOTFS_TEMP/root/test.sh" << 'EOF'
+cat > "$ROOTFS_TEMP/root/test.sh" << EOF
 #!/bin/sh
 # Simple test script to verify VM is working
 echo "Alpine Linux test VM"
-echo "IP: $(ip addr show eth0 | grep 'inet ' | awk '{print $2}')"
-echo "Gateway: $(ip route | grep default | awk '{print $3}')"
-ping -c 1 172.16.0.1 && echo "Can ping gateway" || echo "Cannot ping gateway"
+echo "IP: \$(ip addr show eth0 | grep 'inet ' | awk '{print \$2}')"
+echo "Gateway: \$(ip route | grep default | awk '{print \$3}')"
+ping -c 1 $GATEWAY_IP && echo "Can ping gateway" || echo "Cannot ping gateway"
 ping -c 1 8.8.8.8 && echo "Can reach internet" || echo "Cannot reach internet"
 EOF
 chmod +x "$ROOTFS_TEMP/root/test.sh"
@@ -261,7 +264,7 @@ info "  Alpine test rootfs built successfully"
 info "========================================="
 info "Output: $OUTPUT_PATH"
 info "Size: $ACTUAL_SIZE"
-info "Network: 172.16.0.2/24 (gateway 172.16.0.1)"
+info "Network: $GUEST_IP/24 (gateway $GATEWAY_IP)"
 info "Root password: $ROOT_PASSWORD"
 info "SSH: Enabled (port 22)"
 info ""

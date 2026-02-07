@@ -37,8 +37,8 @@ warn "========================================="
 warn "This will:"
 warn "  - Stop all running VMs"
 warn "  - Destroy all VM instances"
-warn "  - Remove the bridge network"
-warn "  - Remove systemd service"
+warn "  - Remove TAP devices and firewall rules"
+warn "  - Remove global NAT rules"
 warn ""
 read -p "Continue? [y/N] " -n 1 -r
 echo
@@ -54,7 +54,7 @@ if [[ -d "$VMS_DIR" ]]; then
         if [[ -d "$vm_dir" ]]; then
             vm_name=$(basename "$vm_dir")
             info "Processing VM: $vm_name"
-            
+
             # Stop VM if running (as user)
             if [[ -f "$vm_dir/state/vm.pid" ]]; then
                 pid=$(cat "$vm_dir/state/vm.pid")
@@ -63,16 +63,22 @@ if [[ -d "$VMS_DIR" ]]; then
                     sudo -u "$SUDO_USER" "$SCRIPT_DIR/../vm.sh" down "$vm_name" 2>/dev/null || true
                 fi
             fi
-            
-            # Destroy VM (requires sudo for TAP removal)
+
+            # Remove per-TAP FORWARD rule
             if [[ -f "$vm_dir/state/tap_name.txt" ]]; then
                 tap_name=$(cat "$vm_dir/state/tap_name.txt")
+                host_iface=$(cat "$vm_dir/state/host_iface.txt" 2>/dev/null || detect_host_interface)
+                if [[ -n "$host_iface" ]]; then
+                    iptables -D FORWARD -i "$tap_name" -o "$host_iface" -j ACCEPT 2>/dev/null || true
+                fi
+
+                # Remove TAP device
                 if ip link show "$tap_name" &>/dev/null; then
                     info "  Removing TAP device $tap_name..."
                     ip link delete "$tap_name" 2>/dev/null || true
                 fi
             fi
-            
+
             # Remove VM directory
             info "  Removing VM files..."
             rm -rf "$vm_dir"
@@ -80,17 +86,12 @@ if [[ -d "$VMS_DIR" ]]; then
     done
 fi
 
-# Stop and disable systemd service
-info "Stopping firecracker-bridge service..."
-systemctl stop firecracker-bridge.service 2>/dev/null || true
-systemctl disable firecracker-bridge.service 2>/dev/null || true
-
-# Remove systemd service file
-SERVICE_FILE="/etc/systemd/system/firecracker-bridge.service"
-if [[ -f "$SERVICE_FILE" ]]; then
-    info "Removing systemd service file..."
-    rm -f "$SERVICE_FILE"
-    systemctl daemon-reload
+# Remove global NAT rules
+info "Removing global NAT rules..."
+HOST_IFACE=$(detect_host_interface)
+if [[ -n "$HOST_IFACE" ]]; then
+    iptables -t nat -D POSTROUTING -o "$HOST_IFACE" -j MASQUERADE 2>/dev/null || true
+    iptables -D FORWARD -i "$HOST_IFACE" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
 fi
 
 # Remove state directory

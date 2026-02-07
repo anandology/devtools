@@ -47,7 +47,7 @@ if [[ ! -r /dev/kvm ]] || [[ ! -w /dev/kvm ]]; then
 fi
 
 # Check for required tools
-for cmd in ip iptables systemctl curl; do
+for cmd in ip iptables curl; do
     if ! command -v $cmd &> /dev/null; then
         error "$cmd is not installed. Please install it first."
     fi
@@ -58,89 +58,60 @@ FIRECRACKER_BIN="$BIN_DIR/firecracker"
 if [[ ! -x "$FIRECRACKER_BIN" ]]; then
     info "Downloading Firecracker $FIRECRACKER_VERSION..."
     FIRECRACKER_URL="https://github.com/firecracker-microvm/firecracker/releases/download/${FIRECRACKER_VERSION}/firecracker-${FIRECRACKER_VERSION}-x86_64.tgz"
-    
+
     TMP_DIR=$(mktemp -d)
     cd "$TMP_DIR"
     curl -L "$FIRECRACKER_URL" -o firecracker.tgz
     tar -xzf firecracker.tgz
-    
+
     # Move binary to bin directory
     mv "release-${FIRECRACKER_VERSION}-x86_64/firecracker-${FIRECRACKER_VERSION}-x86_64" "$FIRECRACKER_BIN"
     chmod +x "$FIRECRACKER_BIN"
     chown "$SUDO_USER:$SUDO_USER" "$FIRECRACKER_BIN"
-    
+
     cd - > /dev/null
     rm -rf "$TMP_DIR"
-    
+
     info "✓ Firecracker binary installed to $FIRECRACKER_BIN"
 else
     info "✓ Firecracker binary already present"
 fi
 
-# Create systemd service for bridge management
-info "Creating systemd service for bridge management..."
+# Enable IP forwarding (persistent)
+info "Enabling IP forwarding..."
+sysctl -w net.ipv4.ip_forward=1 > /dev/null
+if ! grep -q "^net.ipv4.ip_forward=1" /etc/sysctl.conf 2>/dev/null; then
+    echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
+fi
+info "✓ IP forwarding enabled"
 
-# Make helper scripts executable
-chmod +x "$BIN_DIR/bridge-up.sh" "$BIN_DIR/bridge-down.sh"
+# Set up global NAT (MASQUERADE on host interface)
+info "Setting up NAT rules..."
+HOST_IFACE=$(detect_host_interface)
 
-SERVICE_FILE="/etc/systemd/system/firecracker-bridge.service"
+if [[ -z "$HOST_IFACE" ]]; then
+    error "Could not detect host network interface"
+fi
 
-cat > "$SERVICE_FILE" << EOF
-[Unit]
-Description=Firecracker Bridge Network
-After=network.target
+# Add MASQUERADE rule (check if exists first)
+iptables -t nat -C POSTROUTING -o "$HOST_IFACE" -j MASQUERADE 2>/dev/null || \
+    iptables -t nat -A POSTROUTING -o "$HOST_IFACE" -j MASQUERADE
 
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStart=$BIN_DIR/bridge-up.sh
-ExecStop=$BIN_DIR/bridge-down.sh
+# Add global conntrack FORWARD rule for return traffic
+iptables -C FORWARD -i "$HOST_IFACE" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
+    iptables -A FORWARD -i "$HOST_IFACE" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 
-[Install]
-WantedBy=multi-user.target
-EOF
+info "✓ NAT rules configured on $HOST_IFACE"
 
-# Reload systemd and enable service
-systemctl daemon-reload
-systemctl enable firecracker-bridge.service
-
-# Use restart to ensure service uses new configuration (in case it was already running)
-systemctl restart firecracker-bridge.service
-
-info "✓ Bridge service created and started"
-
-# Create state directory and symlink
-mkdir -p "$STATE_DIR"
-chown "$SUDO_USER:$SUDO_USER" "$STATE_DIR"
-
-# Wait for bridge to be created (with retry)
-BRIDGE_LINK="$STATE_DIR/bridge"
-MAX_RETRIES=10
-RETRY_COUNT=0
-
-while [[ $RETRY_COUNT -lt $MAX_RETRIES ]]; do
-    if [[ -e "/sys/class/net/$BRIDGE_NAME" ]]; then
-        ln -sf "/sys/class/net/$BRIDGE_NAME" "$BRIDGE_LINK"
-        info "✓ Bridge $BRIDGE_NAME is active"
-        break
-    fi
-    RETRY_COUNT=$((RETRY_COUNT + 1))
-    if [[ $RETRY_COUNT -lt $MAX_RETRIES ]]; then
-        sleep 0.5
-    else
-        error "Bridge $BRIDGE_NAME was not created successfully after ${MAX_RETRIES} retries"
-    fi
-done
-
-# Create other required directories
-mkdir -p "$KERNELS_DIR" "$VMS_DIR"
+# Create required directories
+mkdir -p "$STATE_DIR" "$KERNELS_DIR" "$VMS_DIR"
 chown -R "$SUDO_USER:$SUDO_USER" "$VMS_ROOT"
 
 info ""
 info "========================================="
 info "  Firecracker Setup Complete!"
 info "========================================="
-info "Bridge: $BRIDGE_NAME at $BRIDGE_IP"
+info "NAT: MASQUERADE on $HOST_IFACE"
 info "State: $STATE_DIR"
 info ""
 info "Next steps:"

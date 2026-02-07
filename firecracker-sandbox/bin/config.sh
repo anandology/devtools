@@ -2,9 +2,9 @@
 # Global configuration for Firecracker VM framework
 
 # Network configuration
-BRIDGE_NAME="br-firecracker"
-BRIDGE_IP="172.16.0.1/24"
-BRIDGE_NET="172.16.0.0/24"
+# Each VM gets its own /24 subnet: 172.16.N.0/24
+# TAP IP = 172.16.N.1, Guest IP = 172.16.N.2
+SUBNET_PREFIX="172.16"
 
 # Firecracker version
 FIRECRACKER_VERSION="v1.7.0"
